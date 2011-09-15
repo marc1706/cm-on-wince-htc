@@ -43,7 +43,6 @@
 #include <linux/ethtool.h>
 #include <linux/fcntl.h>
 #include <linux/fs.h>
-#include <linux/mutex.h>
 
 #include <asm/uaccess.h>
 #include <asm/unaligned.h>
@@ -107,7 +106,7 @@ int wifi_set_power(int on, unsigned long msec)
 
 int wifi_set_reset(int on, unsigned long msec)
 {
-	DHD_TRACE(("%s = %d\n", __FUNCTION__, on));
+	printk("%s = %d\n", __FUNCTION__, on);
 	if (wifi_control_data && wifi_control_data->set_reset) {
 		wifi_control_data->set_reset(on);
 	}
@@ -118,7 +117,7 @@ int wifi_set_reset(int on, unsigned long msec)
 
 int wifi_get_mac_addr(unsigned char *buf)
 {
-	DHD_TRACE(("%s\n", __FUNCTION__));
+	printk("%s\n", __FUNCTION__);
 	if (!buf)
 		return -EINVAL;
 	if (wifi_control_data && wifi_control_data->get_mac_addr) {
@@ -255,7 +254,7 @@ typedef struct dhd_info {
 	/* OS/stack specifics */
 	dhd_if_t *iflist[DHD_MAX_IFS];
 
-	struct mutex proto_sem;
+	struct semaphore proto_sem;
 	wait_queue_head_t ioctl_resp_wait;
 	struct timer_list timer;
 	bool wd_timer_valid;
@@ -266,7 +265,7 @@ typedef struct dhd_info {
 
 	/* Thread based operation */
 	bool threads_only;
-	struct mutex sdsem;
+	struct semaphore sdsem;
 	long watchdog_pid;
 	struct semaphore watchdog_sem;
 	struct completion watchdog_exited;
@@ -1400,24 +1399,22 @@ dhd_watchdog_thread(void *data)
 	/* Run until signal received */
 	while (1) {
 		if (down_interruptible (&dhd->watchdog_sem) == 0) {
-			dhd_os_sdlock(&dhd->pub);
+
 			if (dhd->pub.dongle_reset == FALSE) {
-				DHD_TIMER(("%s:\n", __FUNCTION__));
 				/* Call the bus module watchdog */
 				dhd_bus_watchdog(&dhd->pub);
-
-				/* Count the tick for reference */
-				dhd->pub.tickcnt++;
-
-				/* Reschedule the watchdog */
-				if (dhd->wd_timer_valid)
-					mod_timer(&dhd->timer, jiffies + dhd_watchdog_ms * HZ / 1000);
 			}
-			dhd_os_sdunlock(&dhd->pub);
+			/* Count the tick for reference */
+			dhd->pub.tickcnt++;
+
+			/* Reschedule the watchdog */
+			if (dhd->wd_timer_valid)
+				mod_timer(&dhd->timer, jiffies + dhd_watchdog_ms * HZ / 1000);
+
 			dhd_os_wake_unlock(&dhd->pub);
-		} else {
-			break;
 		}
+		else
+			break;
 	}
 
 	complete_and_exit(&dhd->watchdog_exited, 0);
@@ -1429,17 +1426,11 @@ dhd_watchdog(ulong data)
 	dhd_info_t *dhd = (dhd_info_t *)data;
 
 	dhd_os_wake_lock(&dhd->pub);
-	if (dhd->pub.dongle_reset) {
-		dhd_os_wake_unlock(&dhd->pub);
-		return;
-	}
-
 	if (dhd->watchdog_pid >= 0) {
 		up(&dhd->watchdog_sem);
 		return;
 	}
 
-	dhd_os_sdlock(&dhd->pub);
 	/* Call the bus module watchdog */
 	dhd_bus_watchdog(&dhd->pub);
 
@@ -1449,7 +1440,6 @@ dhd_watchdog(ulong data)
 	/* Reschedule the watchdog */
 	if (dhd->wd_timer_valid)
 		mod_timer(&dhd->timer, jiffies + dhd_watchdog_ms * HZ / 1000);
-	dhd_os_sdunlock(&dhd->pub);
 	dhd_os_wake_unlock(&dhd->pub);
 }
 
@@ -2059,7 +2049,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	net->netdev_ops = NULL;
 #endif
 
-	mutex_init(&dhd->proto_sem);
+	init_MUTEX(&dhd->proto_sem);
 	/* Initialize other structure content */
 	init_waitqueue_head(&dhd->ioctl_resp_wait);
 	init_waitqueue_head(&dhd->ctrl_wait);
@@ -2106,7 +2096,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	dhd->timer.function = dhd_watchdog;
 
 	/* Initialize thread based operation and lock */
-	mutex_init(&dhd->sdsem);
+	init_MUTEX(&dhd->sdsem);
 	if ((dhd_watchdog_prio >= 0) && (dhd_dpc_prio >= 0)) {
 		dhd->threads_only = TRUE;
 	}
@@ -2208,8 +2198,8 @@ dhd_bus_start(dhd_pub_t *dhdp)
 #if defined(OOB_INTR_ONLY)
 	/* Host registration for OOB interrupt */
 	if (bcmsdh_register_oob_intr(dhdp)) {
-		dhd->wd_timer_valid = FALSE;
 		del_timer_sync(&dhd->timer);
+		dhd->wd_timer_valid = FALSE;
 		DHD_ERROR(("%s Host failed to resgister for OOB\n", __FUNCTION__));
 		return -ENODEV;
 	}
@@ -2220,8 +2210,8 @@ dhd_bus_start(dhd_pub_t *dhdp)
 
 	/* If bus is not ready, can't come up */
 	if (dhd->pub.busstate != DHD_BUS_DATA) {
-		dhd->wd_timer_valid = FALSE;
 		del_timer_sync(&dhd->timer);
+		dhd->wd_timer_valid = FALSE;
 		DHD_ERROR(("%s failed bus is not ready\n", __FUNCTION__));
 		return -ENODEV;
 	}
@@ -2387,7 +2377,6 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	       dhd->pub.mac.octet[3], dhd->pub.mac.octet[4], dhd->pub.mac.octet[5]);
 
 #if defined(CONFIG_WIRELESS_EXT)
-#if defined(CONFIG_FIRST_SCAN)
 #ifdef SOFTAP
 	if (ifidx == 0)
 		/* Don't call for SOFTAP Interface in SOFTAP MODE */
@@ -2395,7 +2384,6 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 #else
 		wl_iw_iscan_set_scan_broadcast_prep(net, 1);
 #endif /* SOFTAP */
-#endif /* CONFIG_FIRST_SCAN */
 #endif /* CONFIG_WIRELESS_EXT */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
@@ -2432,8 +2420,8 @@ dhd_bus_detach(dhd_pub_t *dhdp)
 #endif /* defined(OOB_INTR_ONLY) */
 
 			/* Clear the watchdog timer */
-			dhd->wd_timer_valid = FALSE;
 			del_timer_sync(&dhd->timer);
+			dhd->wd_timer_valid = FALSE;
 		}
 	}
 }
@@ -2622,7 +2610,7 @@ dhd_os_proto_block(dhd_pub_t *pub)
 	dhd_info_t *dhd = (dhd_info_t *)(pub->info);
 
 	if (dhd) {
-		mutex_lock(&dhd->proto_sem);
+		down(&dhd->proto_sem);
 		return 1;
 	}
 
@@ -2635,7 +2623,7 @@ dhd_os_proto_unblock(dhd_pub_t *pub)
 	dhd_info_t *dhd = (dhd_info_t *)(pub->info);
 
 	if (dhd) {
-		mutex_unlock(&dhd->proto_sem);
+		up(&dhd->proto_sem);
 		return 1;
 	}
 
@@ -2699,28 +2687,29 @@ void
 dhd_os_wd_timer(void *bus, uint wdtick)
 {
 	dhd_pub_t *pub = bus;
+	static uint save_dhd_watchdog_ms = 0;
 	dhd_info_t *dhd = (dhd_info_t *)pub->info;
-	unsigned long flags;
-	int del_timer_flag = FALSE;
-
-	flags = dhd_os_spin_lock(pub);
 
 	/* don't start the wd until fw is loaded */
-	if (pub->busstate != DHD_BUS_DOWN) {
-		if (wdtick) {
-			dhd_watchdog_ms = (uint)wdtick;
-			dhd->wd_timer_valid = TRUE;
-			/* Re arm the timer, at last watchdog period */
-			mod_timer(&dhd->timer, jiffies + dhd_watchdog_ms * HZ / 1000);
-		} else if (dhd->wd_timer_valid == TRUE) {
-			/* Totally stop the timer */
-			dhd->wd_timer_valid = FALSE;
-			del_timer_flag = TRUE;
-		}
-	}
-	dhd_os_spin_unlock(pub, flags);
-	if (del_timer_flag) {
+	if (pub->busstate == DHD_BUS_DOWN)
+		return;
+
+	/* Totally stop the timer */
+	if (!wdtick && dhd->wd_timer_valid == TRUE) {
 		del_timer_sync(&dhd->timer);
+		dhd->wd_timer_valid = FALSE;
+		save_dhd_watchdog_ms = wdtick;
+		return;
+	}
+
+	if (wdtick) {
+		dhd_watchdog_ms = (uint)wdtick;
+
+		/* Re arm the timer, at last watchdog period */
+		mod_timer(&dhd->timer, jiffies + dhd_watchdog_ms * HZ / 1000);
+
+		dhd->wd_timer_valid = TRUE;
+		save_dhd_watchdog_ms = wdtick;
 	}
 }
 
@@ -2774,7 +2763,7 @@ dhd_os_sdlock(dhd_pub_t *pub)
 	dhd = (dhd_info_t *)(pub->info);
 
 	if (dhd->threads_only)
-		mutex_lock(&dhd->sdsem);
+		down(&dhd->sdsem);
 	else
 		spin_lock_bh(&dhd->sdlock);
 }
@@ -2787,7 +2776,7 @@ dhd_os_sdunlock(dhd_pub_t *pub)
 	dhd = (dhd_info_t *)(pub->info);
 
 	if (dhd->threads_only)
-		mutex_unlock(&dhd->sdsem);
+		up(&dhd->sdsem);
 	else
 		spin_unlock_bh(&dhd->sdlock);
 }
@@ -2938,12 +2927,20 @@ dhd_dev_reset(struct net_device *dev, uint8 flag)
 
 	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
 
+	/* Turning off watchdog */
+	if (flag)
+		dhd_os_wd_timer(&dhd->pub, 0);
+
 	ret = dhd_bus_devreset(&dhd->pub, flag);
 	if (ret) {
 		DHD_ERROR(("%s: dhd_bus_devreset: %d\n", __FUNCTION__, ret));
 		return ret;
 	}
-	DHD_ERROR(("%s: WLAN %s DONE\n", __FUNCTION__, flag ? "OFF" : "ON"));
+
+	/* Turning on watchdog back */
+	if (!flag)
+		dhd_os_wd_timer(&dhd->pub, dhd_watchdog_ms);
+	DHD_ERROR(("%s: WLAN OFF DONE\n", __FUNCTION__));
 
 	return ret;
 }
@@ -3076,15 +3073,6 @@ void dhd_bus_country_set(struct net_device *dev, char *country_code)
 
 	if (dhd && dhd->pub.up)
 		strncpy(dhd->pub.country_code, country_code, WLC_CNTRY_BUF_SZ);
-}
-
-char *dhd_bus_country_get(struct net_device *dev)
-{
-	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
-
-	if (dhd && (dhd->pub.country_code[0] != 0))
-		return dhd->pub.country_code;
-	return NULL;
 }
 
 void dhd_os_start_lock(dhd_pub_t *pub)
