@@ -61,7 +61,7 @@ static void flashlight_hw_command(uint8_t addr, uint8_t data)
 	uint8_t loop_i, loop_j;
 	const uint8_t fl_addr_to_rising_count[4] = { 17, 18, 19, 20 };
 	uint8_t loop_tmp;
-	if (!this_fl_str->gpio_torch && !this_fl_str->gpio_torch) {
+	if (!this_fl_str->gpio_torch && !this_fl_str->gpio_flash) {
 		printk(KERN_ERR "%s: not setup GPIO??? torch: %d, flash: %d\n",
 					__func__, this_fl_str->gpio_torch,
 						this_fl_str->gpio_flash);
@@ -84,7 +84,10 @@ static void flashlight_hw_command(uint8_t addr, uint8_t data)
 
 static void flashlight_turn_off(void)
 {
-	gpio_direction_output(this_fl_str->gpio_flash, 0);
+	if (this_fl_str->mode_status == FL_MODE_OFF)
+		return;
+	if (gpio_get_value(this_fl_str->gpio_flash))
+		gpio_direction_output(this_fl_str->gpio_flash, 0);
 	gpio_direction_output(this_fl_str->gpio_torch, 0);
 	this_fl_str->mode_status = FL_MODE_OFF;
 	this_fl_str->fl_lcdev.brightness = LED_OFF;
@@ -103,7 +106,7 @@ static enum hrtimer_restart flashlight_hrtimer_func(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-int flashlight_control(int mode)
+int aat1271_flashlight_control(int mode)
 {
 	int ret = 0;
 	uint32_t flash_ns = ktime_to_ns(ktime_get());
@@ -114,6 +117,20 @@ int flashlight_control(int mode)
 		return -EIO;
 	}
 #endif
+	if (this_fl_str->mode_status == mode) {
+		printk(KERN_INFO "%s: mode is same: %d\n",
+							FLASHLIGHT_NAME, mode);
+
+		if (!hrtimer_active(&this_fl_str->timer) &&
+			this_fl_str->mode_status == FL_MODE_OFF) {
+			pr_info("flashlight hasn't been enable or" \
+				"has already reset to 0 due to timeout\n");
+			return ret;
+		}
+		else
+			return -EINVAL;
+	}
+
 	spin_lock_irqsave(&this_fl_str->spin_lock,
 						this_fl_str->spinlock_flags);
 	if (this_fl_str->mode_status == FL_MODE_FLASH) {
@@ -233,7 +250,7 @@ static void fl_lcdev_brightness_set(struct led_classdev *led_cdev,
 	} else
 		/* off and else */
 		mode = FL_MODE_OFF;
-	flashlight_control(mode);
+	aat1271_flashlight_control(mode);
 
 	return;
 }

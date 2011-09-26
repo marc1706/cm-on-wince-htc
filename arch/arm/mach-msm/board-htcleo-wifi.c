@@ -1,4 +1,4 @@
-/* linux/arch/arm/mach-msm/board-bravo-wifi.c
+/* linux/arch/arm/mach-msm/board-htcleo-wifi.c
 */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -9,7 +9,7 @@
 #include <asm/gpio.h>
 #include <asm/io.h>
 #include <linux/skbuff.h>
-#include <linux/wifi_tiwlan.h>
+#include <linux/wlan_plat.h>
 
 #include "board-htcleo.h"
 

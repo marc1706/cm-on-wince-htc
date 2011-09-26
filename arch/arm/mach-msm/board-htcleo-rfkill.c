@@ -327,6 +327,8 @@ static int htcleo_rfkill_remove(struct platform_device *dev)
 {
 	rfkill_unregister(bt_rfk);
 	rfkill_destroy(bt_rfk);
+	gpio_free(HTCLEO_GPIO_BT_SHUTDOWN_N);
+	gpio_free(HTCLEO_GPIO_BT_RESET_N);
 
 	return 0;
 }

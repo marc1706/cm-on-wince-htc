@@ -134,5 +134,6 @@ void msm_hsusb_set_vbus_state(int online);
 #else
 static inline void msm_hsusb_set_vbus_state(int online) {}
 #endif
+int board_mfg_mode(void);
 
 #endif

@@ -28,6 +28,7 @@ struct led_pwm_data {
 	struct pwm_device	*pwm;
 	unsigned int 		active_low;
 	unsigned int		period;
+	unsigned int		max_brightness;
 };
 
 static void led_pwm_set(struct led_classdev *led_cdev,

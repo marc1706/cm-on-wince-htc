@@ -28,8 +28,11 @@
 #include <linux/crc32.h>
 #include <linux/io.h>
 
+#include "board-htcleo.h"
+
 #define NVS_MAX_SIZE		0x800U
 #define NVS_MACADDR_SIZE	0x1AU
+#define WLAN_SKB_BUF_NUM	16
 
 static struct proc_dir_entry *wifi_calibration;
 static unsigned char nvs_mac_addr[NVS_MACADDR_SIZE];
@@ -89,7 +92,7 @@ static int parse_tag_msm_wifi(void)
 	sid1 = crc32(~0, &id1, 4);
 	sid2 = crc32(~0, &id2, 4);
 	sid3 = crc32(~0, &id3, 4);
-	sprintf(nvs_mac_addr, "macaddr=00:90:4c:%2x:%2x:%2x\n", sid1 % 0xff, sid2 % 0xff, sid3 % 0xff);
+	sprintf(nvs_mac_addr, "macaddr=00:23:76:%2x:%2x:%2x\n", sid1 % 0xff, sid2 % 0xff, sid3 % 0xff);
 	pr_info("Device Wifi Mac Address: %s\n", nvs_mac_addr);
 	return 0;
 }

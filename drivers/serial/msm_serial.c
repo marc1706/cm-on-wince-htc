@@ -55,6 +55,19 @@ struct msm_port {
 #endif
 };
 
+#define UART_TO_MSM(uart_port)	((struct msm_port *) uart_port)
+
+static inline void msm_write(struct uart_port *port, unsigned int val,
+			     unsigned int off)
+{
+	__raw_writel(val, port->membase + off);
+}
+
+static inline unsigned int msm_read(struct uart_port *port, unsigned int off)
+{
+	return __raw_readl(port->membase + off);
+}
+
 static void msm_stop_tx(struct uart_port *port)
 {
 	struct msm_port *msm_port = UART_TO_MSM(port);
@@ -256,7 +269,7 @@ static void handle_tx(struct uart_port *port)
 {
 	struct circ_buf *xmit = &port->state->xmit;
 	struct msm_port *msm_port = UART_TO_MSM(port);
-	int sent_tx;
+	int sent_tx = 0;
 
 	if (port->x_char) {
 		msm_write(port, port->x_char, UART_TF);
@@ -470,7 +483,19 @@ static void msm_init_clock(struct uart_port *port)
 	msm_port->clk_state = MSM_CLK_ON;
 #endif
 
-	msm_serial_set_mnd_regs(port);
+	if (port->uartclk == 19200000) {
+		/* clock is TCXO (19.2MHz) */
+		msm_write(port, 0x06, UART_MREG);
+		msm_write(port, 0xF1, UART_NREG);
+		msm_write(port, 0x0F, UART_DREG);
+		msm_write(port, 0x1A, UART_MNDREG);
+	} else {
+		/* clock must be TCXO/4 */
+		msm_write(port, 0xC0, UART_MREG);
+		msm_write(port, 0xB2, UART_NREG);
+		msm_write(port, 0x7D, UART_DREG);
+		msm_write(port, 0x1C, UART_MNDREG);
+	}
 }
 
 static int msm_startup(struct uart_port *port)
@@ -805,7 +830,8 @@ static void msm_console_write(struct console *co, const char *s,
 static int __init msm_console_setup(struct console *co, char *options)
 {
 	struct uart_port *port;
-	int baud, flow, bits, parity;
+	int flow, bits, parity;
+	int baud = 0;
 
 	if (unlikely(co->index >= UART_NR || co->index < 0))
 		return -ENXIO;
@@ -870,7 +896,6 @@ static int __init msm_serial_probe(struct platform_device *pdev)
 	struct msm_port *msm_port;
 	struct resource *resource;
 	struct uart_port *port;
-	int irq;
 
 	if (unlikely(pdev->id < 0 || pdev->id >= UART_NR))
 		return -ENXIO;
@@ -885,18 +910,17 @@ static int __init msm_serial_probe(struct platform_device *pdev)
 	if (unlikely(IS_ERR(msm_port->clk)))
 		return PTR_ERR(msm_port->clk);
 	port->uartclk = clk_get_rate(msm_port->clk);
-	printk(KERN_INFO "uartclk = %d\n", port->uartclk);
-
 
 	resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (unlikely(!resource))
 		return -ENXIO;
 	port->mapbase = resource->start;
 
-	irq = platform_get_irq(pdev, 0);
-	if (unlikely(irq < 0))
+	port->irq = platform_get_irq(pdev, 0);
+	/*
+	if (unlikely(port->irq < 0))
 		return -ENXIO;
-	port->irq = irq;
+	*/
 
 	platform_set_drvdata(pdev, port);
 
