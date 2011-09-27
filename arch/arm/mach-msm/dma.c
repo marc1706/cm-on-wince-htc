@@ -24,6 +24,7 @@
 #include <mach/dma.h>
 
 #define MSM_DMOV_CHANNEL_COUNT 16
+#define MSM_DMOV_CRCI_COUNT 16
 
 enum {
 	MSM_DMOV_PRINT_ERRORS = 1,
@@ -94,6 +95,29 @@ void msm_dmov_enqueue_cmd(unsigned id, struct msm_dmov_cmd *cmd)
 	spin_unlock_irqrestore(&msm_dmov_lock, irq_flags);
 }
 EXPORT_SYMBOL(msm_dmov_enqueue_cmd);
+
+unsigned int msm_dmov_build_crci_mask(int n, ...)
+{
+	unsigned int mask = 0;
+#ifdef CONFIG_MSM_ADM3
+	int i;
+	int crci;
+	int crci_num;
+	unsigned int crci_muxsel;
+	va_list crcis;
+	va_start(crcis, n);
+	for (i = 0; i < n; i++) {
+		crci = va_arg(crcis, int);
+		crci_muxsel = CRCI_MUXSEL(crci);
+		crci_num = CRCI_NUM(crci);
+		mask |= (1 << (2*crci_num + 1));
+		mask |= (crci_muxsel << (2*crci_num));
+	}
+	va_end(crcis);
+#endif
+	return mask;
+}
+EXPORT_SYMBOL(msm_dmov_build_crci_mask);
 
 void msm_dmov_flush(unsigned int id)
 {

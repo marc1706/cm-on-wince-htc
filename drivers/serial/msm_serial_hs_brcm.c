@@ -1720,7 +1720,7 @@ static int msm_hs_startup(struct uart_port *uport)
 	tx->dma_in_flight = 0;
 
 	tx->xfer.complete_func = msm_hs_dmov_tx_callback;
-	tx->xfer.exec_func = NULL;
+	tx->xfer.execute_func = NULL;
 	tx->xfer.crci_mask = msm_dmov_build_crci_mask(1,
 						      msm_uport->dma_tx_crci);
 
