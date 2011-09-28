@@ -869,7 +869,8 @@ void r600_pcie_gart_tlb_flush(struct radeon_device *rdev)
 	u32 tmp;
 
 	/* flush hdp cache so updates hit vram */
-	if ((rdev->family >= CHIP_RV770) && (rdev->family <= CHIP_RV740)) {
+	if ((rdev->family >= CHIP_RV770) && (rdev->family <= CHIP_RV740) &&
+	    rdev->vram_scratch.ptr) {
 		void __iomem *ptr = (void *)rdev->gart.table.vram.ptr;
 		u32 tmp;
 

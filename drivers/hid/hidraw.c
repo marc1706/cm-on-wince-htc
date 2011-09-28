@@ -111,6 +111,12 @@ static ssize_t hidraw_write(struct file *file, const char __user *buffer, size_t
 	int ret = 0;
 
 	mutex_lock(&minors_lock);
+
+	if (!hidraw_table[minor]) {
+		ret = -ENODEV;
+		goto out;
+	}
+
 	dev = hidraw_table[minor]->hid;
 
 	if (!dev->hid_output_raw_report) {
@@ -188,6 +194,10 @@ static int hidraw_open(struct inode *inode, struct file *file)
 	file->private_data = list;
 
 	dev = hidraw_table[minor];
+	if (!dev) {
+		ret = -ENODEV;
+		goto out;
+	}
 	if (!dev->open++) {
 		if (dev->hid->ll_driver->power) {
 			err = dev->hid->ll_driver->power(dev->hid, PM_HINT_FULLON);
@@ -319,6 +329,7 @@ static long hidraw_ioctl(struct file *file, unsigned int cmd,
 
 		ret = -ENOTTY;
 	}
+out:
 	mutex_unlock(&minors_lock);
 	return ret;
 }
