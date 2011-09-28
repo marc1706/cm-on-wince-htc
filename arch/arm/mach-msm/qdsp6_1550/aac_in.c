@@ -22,6 +22,9 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/uaccess.h>
+/* @todo: check if we can use msm_audio.h
+#include <linux/msm_audio.h>
+*/
 #include <linux/msm_audio_1550.h>
 #include <mach/msm_qdsp6_audio_1550.h>
 

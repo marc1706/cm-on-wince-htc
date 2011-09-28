@@ -2,6 +2,7 @@ obj-y += proc_comm.o
 obj-y += io.o irq.o timer.o dma.o memory.o
 obj-y += vreg.o
 obj-y += dex_comm.o
+obj-y += amss_para.o
 obj-y += pmic.o
 obj-$(CONFIG_ARCH_MSM_ARM11) += acpuclock-arm11.o idle.o
 obj-$(CONFIG_ARCH_MSM_SCORPION) += idle-v7.o
