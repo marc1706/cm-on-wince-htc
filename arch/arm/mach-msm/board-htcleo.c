@@ -109,8 +109,8 @@ static struct regulator_init_data tps65023_data[5] =
         .constraints =
 		{
             .name = "dcdc1", /* VREG_MSMC2_1V29 */
-            .min_uV = 1000000,
-            .max_uV = 1300000,
+            .min_uV = HTCLEO_TPS65023_MIN_UV_MV * 1000,
+            .max_uV = HTCLEO_TPS65023_MAX_UV_MV * 1000,
             .valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
         },
         .consumer_supplies = tps65023_dcdc1_supplies,
@@ -998,6 +998,9 @@ static struct platform_device *devices[] __initdata =
 	&ram_console_device,
 #if !defined(CONFIG_MSM_SERIAL_DEBUGGER)
 	&msm_device_uart1,
+#endif
+#ifdef CONFIG_SERIAL_BCM_BT_LPM
+	&bcm_bt_lpm_device,
 #endif
 	&msm_device_uart_dm1,
 	&htcleo_rfkill,

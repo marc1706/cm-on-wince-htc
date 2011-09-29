@@ -1614,8 +1614,9 @@ static void detect_panel_type(void)
 	else
 	{
 		htcleo_panel_type = PANELTYPE_UNKNOWN;
+		
 		printk(" UNKNOWN, stop system now\n");
-			BUG();
+		BUG();
 	}
 }
 
