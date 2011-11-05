@@ -65,6 +65,30 @@ static int do_adjust_pte(struct vm_area_struct *vma, unsigned long address,
 	return ret;
 }
 
+#if USE_SPLIT_PTLOCKS
+/*
+ * If we are using split PTE locks, then we need to take the page
+ * lock here.  Otherwise we are using shared mm->page_table_lock
+ * which is already locked, thus cannot take it.
+ */
+static inline void do_pte_lock(spinlock_t *ptl)
+{
+	/*
+	 * Use nested version here to indicate that we are already
+	 * holding one similar spinlock.
+	 */
+	spin_lock_nested(ptl, SINGLE_DEPTH_NESTING);
+}
+
+static inline void do_pte_unlock(spinlock_t *ptl)
+{
+	spin_unlock(ptl);
+}
+#else /* !USE_SPLIT_PTLOCKS */
+static inline void do_pte_lock(spinlock_t *ptl) {}
+static inline void do_pte_unlock(spinlock_t *ptl) {}
+#endif /* USE_SPLIT_PTLOCKS */
+
 static int adjust_pte(struct vm_area_struct *vma, unsigned long address,
 	unsigned long pfn)
 {
@@ -89,11 +113,11 @@ static int adjust_pte(struct vm_area_struct *vma, unsigned long address,
 	 */
 	ptl = pte_lockptr(vma->vm_mm, pmd);
 	pte = pte_offset_map_nested(pmd, address);
-	spin_lock(ptl);
+	do_pte_lock(ptl);
 
 	ret = do_adjust_pte(vma, address, pfn, pte);
 
-	spin_unlock(ptl);
+	do_pte_unlock(ptl);
 	pte_unmap_nested(pte);
 
 	return ret;
@@ -141,7 +165,7 @@ make_coherent(struct address_space *mapping, struct vm_area_struct *vma,
  * a page table, or changing an existing PTE.  Basically, there are two
  * things that we need to take care of:
  *
- *  1. If PG_dcache_dirty is set for the page, we need to ensure
+ *  1. If PG_dcache_clean is not set for the page, we need to ensure
  *     that any cache entries for the kernels virtual memory
  *     range are written back to the page.
  *  2. If we have multiple shared mappings of the same space in
@@ -169,7 +193,7 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long addr,
 
 	mapping = page_mapping(page);
 #ifndef CONFIG_SMP
-	if (test_and_clear_bit(PG_dcache_dirty, &page->flags))
+	if (!test_and_set_bit(PG_dcache_clean, &page->flags))
 		__flush_dcache_page(mapping, page);
 #endif
 	if (mapping) {

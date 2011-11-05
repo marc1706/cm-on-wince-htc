@@ -26,12 +26,12 @@
 
 #include <mach/msm_qdsp6_audio_1550.h>
 
-#define BUFSZ (256)
+#define BUFSZ (4096)
+#define DMASZ (BUFSZ * 2)
 
 static DEFINE_MUTEX(pcm_in_lock);
 static uint32_t sample_rate = 8000;
 static uint32_t channel_count = 1;
-static uint32_t buffer_size = BUFSZ;
 static int pcm_in_opened = 0;
 
 void audio_client_dump(struct audio_client *ac);
@@ -89,8 +89,8 @@ static long q6_in_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	}
 	case AUDIO_GET_CONFIG: {
 		struct msm_audio_config config;
+		config.buffer_size = BUFSZ;
 		config.buffer_count = 2;
-		config.buffer_size = buffer_size;
 		config.sample_rate = sample_rate;
 		config.channel_count = channel_count;
 		config.unused[0] = 0;

@@ -28,6 +28,10 @@
 #include <linux/mmc/sdio_ids.h>
 #endif
 
+#ifdef CONFIG_WIMAX
+extern int mmc_wimax_get_sdcclk_highspeed(void);
+#endif
+
 static int sdio_read_fbr(struct sdio_func *func)
 {
 	int ret;
@@ -146,8 +150,9 @@ static int sdio_enable_wide(struct mmc_card *card)
 {
 	int ret;
 	u8 ctrl;
+	unsigned int width = MMC_BUS_WIDTH_4;
 
-	if (!(card->host->caps & MMC_CAP_4_BIT_DATA))
+	if (!(card->host->caps & (MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA)))
 		return 0;
 
 	if (card->cccr.low_speed && !card->cccr.wide_bus)
@@ -157,13 +162,19 @@ static int sdio_enable_wide(struct mmc_card *card)
 	if (ret)
 		return ret;
 
+	if (card->host->caps & MMC_CAP_8_BIT_DATA) {
+		width = MMC_BUS_WIDTH_8;
+		ctrl |= SDIO_BUS_WIDTH_8BIT;
+	} else {
+		width = MMC_BUS_WIDTH_4;
 	ctrl |= SDIO_BUS_WIDTH_4BIT;
+	}
 
 	ret = mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_IF, ctrl, NULL);
 	if (ret)
 		return ret;
 
-	mmc_set_bus_width(card->host, MMC_BUS_WIDTH_4);
+	mmc_set_bus_width(card->host, width);
 
 	return 0;
 }
@@ -189,40 +200,6 @@ static int sdio_disable_cd(struct mmc_card *card)
 	ctrl |= SDIO_BUS_CD_DISABLE;
 
 	return mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_IF, ctrl, NULL);
-}
-
-/*
- * Devices that remain active during a system suspend are
- * put back into 1-bit mode.
- */
-static int sdio_disable_wide(struct mmc_card *card)
-{
-	int ret;
-	u8 ctrl;
-
-	if (!(card->host->caps & MMC_CAP_4_BIT_DATA))
-		return 0;
-
-	if (card->cccr.low_speed && !card->cccr.wide_bus)
-		return 0;
-
-	ret = mmc_io_rw_direct(card, 0, 0, SDIO_CCCR_IF, 0, &ctrl);
-	if (ret)
-		return ret;
-
-	if (!(ctrl & SDIO_BUS_WIDTH_4BIT))
-		return 0;
-
-	ctrl &= ~SDIO_BUS_WIDTH_4BIT;
-	ctrl |= SDIO_BUS_ASYNC_INT;
-
-	ret = mmc_io_rw_direct(card, 1, 0, SDIO_CCCR_IF, ctrl, NULL);
-	if (ret)
-		return ret;
-
-	mmc_set_bus_width(card->host, MMC_BUS_WIDTH_1);
-
-	return 0;
 }
 
 /*
@@ -270,6 +247,8 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
+	if (powered_resume && oldcard)
+		return 0;
 	/*
 	 * Inform the card of the voltage
 	 */
@@ -298,12 +277,6 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	}
 
 	card->type = MMC_TYPE_SDIO;
-
-	/*
-	 * Call the optional HC's init_card function to handle quirks.
-	 */
-	if (host->ops->init_card)
-		host->ops->init_card(host, card);
 
 	/*
 	 * For native busses:  set card RCA and quit open drain mode.
@@ -384,9 +357,37 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 		 * high-speed, but it seems that 50 MHz is
 		 * mandatory.
 		 */
+#ifndef CONFIG_SDIO_CES
 		mmc_set_clock(host, 50000000);
+#else
+        printk("[WLAN][CES] set 25M\n");
+      	mmc_set_clock(host, 25000000);
+#endif
 	} else {
-		mmc_set_clock(host, card->cis.max_dtr);
+#ifdef CONFIG_WIMAX
+#ifdef CONFIG_WIMAX_MMC
+		if ( !(strcmp(mmc_hostname(host), CONFIG_WIMAX_MMC))) {
+			if (mmc_wimax_get_sdcclk_highspeed()) {
+				/* Only for wimax slot, to force speed to 49152000 */
+				mmc_set_clock(host, 49152000);
+			} else {
+				mmc_set_clock(host, card->cis.max_dtr);
+			}
+		}
+		else {
+			mmc_set_clock(host, card->cis.max_dtr);
+		}
+#else
+		mmc_set_clock(host, card->cis.max_dtr); 
+#endif
+#else
+#ifndef CONFIG_SDIO_CES
+     mmc_set_clock(host, card->cis.max_dtr);
+#else
+     printk("[WLAN][CES] set 25M in max_dtr\n");
+     mmc_set_clock(host, 25000000);
+#endif
+#endif
 	}
 
 	/*
@@ -487,12 +488,6 @@ static int mmc_sdio_suspend(struct mmc_host *host)
 		}
 	}
 
-	if (!err && host->pm_flags & MMC_PM_KEEP_POWER) {
-		mmc_claim_host(host);
-		sdio_disable_wide(host->card);
-		mmc_release_host(host);
-	}
-
 	return err;
 }
 
@@ -507,11 +502,6 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	mmc_claim_host(host);
 	err = mmc_sdio_init_card(host, host->ocr, host->card,
 				 (host->pm_flags & MMC_PM_KEEP_POWER));
-	if (!err)
-		/* We may have switched to 1-bit mode during suspend. */
-		err = sdio_enable_wide(host->card);
-	if (!err && host->sdio_irqs)
-		mmc_signal_sdio_irq(host);
 	mmc_release_host(host);
 
 	/*
@@ -590,8 +580,7 @@ int mmc_attach_sdio(struct mmc_host *host, u32 ocr)
 	 * The number of functions on the card is encoded inside
 	 * the ocr.
 	 */
-	funcs = (ocr & 0x70000000) >> 28;
-	card->sdio_funcs = 0;
+	card->sdio_funcs = funcs = (ocr & 0x70000000) >> 28;
 
 #ifdef CONFIG_MMC_EMBEDDED_SDIO
 	if (host->embedded_sdio_data.funcs)
@@ -608,7 +597,7 @@ int mmc_attach_sdio(struct mmc_host *host, u32 ocr)
 	/*
 	 * Initialize (but don't add) all present functions.
 	 */
-	for (i = 0; i < funcs; i++, card->sdio_funcs++) {
+	for (i = 0;i < funcs;i++) {
 #ifdef CONFIG_MMC_EMBEDDED_SDIO
 		if (host->embedded_sdio_data.funcs) {
 			struct sdio_func *tmp;
@@ -733,9 +722,36 @@ int sdio_reset_comm(struct mmc_card *card)
 		 * high-speed, but it seems that 50 MHz is
 		 * mandatory.
 		 */
-		mmc_set_clock(host, 50000000);
+#ifndef CONFIG_SDIO_CES
+        mmc_set_clock(host, 50000000);
+#else 
+        printk("[WLAN][CES] set 25M-2\n");
+        mmc_set_clock(host, 25000000);
+#endif
 	} else {
+#ifdef CONFIG_WIMAX
+#ifdef CONFIG_WIMAX_MMC
+		if ( !(strcmp(mmc_hostname(host), CONFIG_WIMAX_MMC))) {
+			if (mmc_wimax_get_sdcclk_highspeed()) {
+				/* Only for wimax slot, to force speed to 49152000 */
+				mmc_set_clock(host, 49152000);
+			} else {
+				mmc_set_clock(host, card->cis.max_dtr);
+			}
+		} else {
+			mmc_set_clock(host, card->cis.max_dtr);
+		}
+#else
 		mmc_set_clock(host, card->cis.max_dtr);
+#endif
+#else
+#ifndef CONFIG_SDIO_CES
+		mmc_set_clock(host, card->cis.max_dtr);
+#else
+        printk("[WLAN][CES] set 25M-2 in max_dtr\n");
+        mmc_set_clock(host, 25000000);
+#endif
+#endif
 	}
 
 	err = sdio_enable_wide(card);
