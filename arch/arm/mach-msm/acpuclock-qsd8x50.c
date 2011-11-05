@@ -243,7 +243,7 @@ static void scpll_set_freq(uint32_t lval)
 			;
 
 		/* completion bit is not reliable for SHOT switch */
-		udelay(25);
+		udelay(15);
 	}
 
 	/* write the new L val and switch mode */
@@ -303,19 +303,21 @@ static int acpuclk_set_vdd_level(int vdd)
 	return regulator_set_voltage(drv_state.regulator, vdd, vdd);
 }
 
-int acpuclk_set_rate(unsigned long rate, int for_power_collapse)
+int acpuclk_set_rate(unsigned long rate, enum setrate_reason reason)
 {
 	struct clkctl_acpu_speed *cur, *next;
 	unsigned long flags;
+	int freq_index=0;
+	int rc;
 
 	cur = drv_state.current_speed;
 
 	/* convert to KHz */
 	rate /= 1000;
 
-	DEBUG("acpuclk_set_rate(%d,%d)\n", (int) rate, for_power_collapse);
+	DEBUG("acpuclk_set_rate(%d,%d)\n", (int) rate, reason);
 
-	if (rate == cur->acpu_khz || rate == 0)
+	if (rate == 0 || rate == cur->acpu_khz)
 		return 0;
 
 	next = acpu_freq_tbl;
@@ -325,19 +327,33 @@ int acpuclk_set_rate(unsigned long rate, int for_power_collapse)
 		if (next->acpu_khz == 0)
 			return -EINVAL;
 		next++;
+		freq_index++;
 	}
 
-	if (!for_power_collapse) {
+	if (reason == SETRATE_CPUFREQ) {
 		mutex_lock(&drv_state.lock);
 		/* Increase VDD if needed. */
-		if (next->vdd > cur->vdd) {
-			if (acpuclk_set_vdd_level(next->vdd)) {
-/*				pr_err("acpuclock: Unable to increase ACPU VDD.\n"); */
-				pr_err("acpuclock: Unable to increase ACPU VDD from %d to %d setting rate to %d.\n", cur->vdd, next->vdd, (int) rate);
-				mutex_unlock(&drv_state.lock);
-				return -EINVAL;
+
+#ifdef CONFIG_MSM_CPU_AVS
+		if(avs_enabled()) {
+			// Notify avs before changing frequency
+			rc = avs_adjust_freq(freq_index, 1);
+			if (rc) {
+				pr_err("Unable to increase ACPU vdd (%d)\n", rc);
+				goto out;
 			}
+		} else {
+#endif // CONFIG_MSM_CPU_AVS
+			if (next->vdd > cur->vdd) {
+				if (acpuclk_set_vdd_level(next->vdd)) {
+					pr_err("acpuclock: Unable to increase ACPU VDD from %d to %d setting rate to %d.\n", cur->vdd, next->vdd, (int) rate);
+					mutex_unlock(&drv_state.lock);
+					return -EINVAL;
+				}
+			}
+#ifdef CONFIG_MSM_CPU_AVS
 		}
+#endif // CONFIG_MSM_CPU_AVS
 	}
 
 	spin_lock_irqsave(&acpu_lock, flags);
@@ -366,14 +382,34 @@ int acpuclk_set_rate(unsigned long rate, int for_power_collapse)
 	drv_state.current_speed = next;
 
 	spin_unlock_irqrestore(&acpu_lock, flags);
-	if (!for_power_collapse) {
-		/* Drop VDD level if we can. */
-		if (next->vdd < cur->vdd) {
-			if (acpuclk_set_vdd_level(next->vdd))
-			/*	pr_err("acpuclock: Unable to drop ACPU VDD.\n");*/
-				pr_err("acpuclock: Unable to drop ACPU VDD from %d to %d setting rate to %d.\n", cur->vdd, next->vdd, (int) rate);
-                               
+
+#ifndef CONFIG_AXI_SCREEN_POLICY
+  if (reason == SETRATE_CPUFREQ || reason == SETRATE_PC) {
+    if (cur->axiclk_khz != next->axiclk_khz)
+      clk_set_rate(drv_state.clk_ebi1, next->axiclk_khz * 1000);
+    DEBUG("acpuclk_set_rate switch axi to %d\n",
+      clk_get_rate(drv_state.clk_ebi1));
+  }
+#endif
+out:
+	if (reason == SETRATE_CPUFREQ) {
+#ifdef CONFIG_MSM_CPU_AVS
+		if(avs_enabled()) {
+			/* notify avs after changing frequency */
+			rc = avs_adjust_freq(freq_index, 0);
+			if (rc)
+				pr_warning("Unable to drop ACPU vdd (%d)\n", rc);
+		} else {
+#endif // CONFIG_MSM_CPU_AVS
+			/* Drop VDD level if we can. */
+			if (next->vdd < cur->vdd) {
+				if (acpuclk_set_vdd_level(next->vdd))
+				/*	pr_err("acpuclock: Unable to drop ACPU VDD.\n");*/
+					pr_err("acpuclock: Unable to drop ACPU VDD from %d to %d setting rate to %d.\n", cur->vdd, next->vdd, (int) rate);
+			}
+#ifdef CONFIG_MSM_CPU_AVS
 		}
+#endif // CONFIG_MSM_CPU_AVS
 		mutex_unlock(&drv_state.lock);
 	}
 
@@ -467,33 +503,64 @@ unsigned long acpuclk_get_rate(void)
 	return drv_state.current_speed->acpu_khz;
 }
 
-uint32_t acpuclk_get_switch_time(void)
+int acpuclk_get_index(void)
 {
-	return drv_state.acpu_switch_time_us;
+	int i;
+	for (i = 0; acpu_freq_tbl[i].acpu_khz; i++)
+		if(acpu_freq_tbl[i].acpu_khz==drv_state.current_speed->acpu_khz)
+			return i;
+        return -EINVAL;
 }
 
-unsigned long acpuclk_power_collapse(void)
+
+uint32_t acpuclk_get_switch_time(void)
+{
+	// switch time may include a voltage switch so add these times together
+	return drv_state.acpu_switch_time_us; //+drv_state.vdd_switch_time_us;
+}
+
+unsigned long acpuclk_power_collapse(int from_idle)
 {
 	int ret = acpuclk_get_rate();
-	ret *= 1000;
+  enum setrate_reason reason = (from_idle) ? SETRATE_PC_IDLE : SETRATE_PC;
 	if (ret > drv_state.power_collapse_khz)
-		acpuclk_set_rate(drv_state.power_collapse_khz, 1);
-	return ret;
+		acpuclk_set_rate(drv_state.power_collapse_khz*1000, reason);
+	return ret*1000;
 }
 
 unsigned long acpuclk_get_wfi_rate(void)
 {
-	return drv_state.wait_for_irq_khz;
+	return drv_state.wait_for_irq_khz*1000;
 }
 
 unsigned long acpuclk_wait_for_irq(void)
 {
 	int ret = acpuclk_get_rate();
-	ret *= 1000;
 	if (ret > drv_state.wait_for_irq_khz)
-		acpuclk_set_rate(drv_state.wait_for_irq_khz, 1);
-	return ret;
+		acpuclk_set_rate(drv_state.wait_for_irq_khz*1000, SETRATE_SWFI);
+	return ret*1000;
 }
+
+#ifdef CONFIG_MSM_CPU_AVS
+static int __init acpu_avs_init(int (*set_vdd) (int), int khz)
+{
+        int i;
+        int freq_count = 0;
+        int freq_index = -1;
+	short vdd_table[ARRAY_SIZE(acpu_freq_tbl)];
+	int freq_table[ARRAY_SIZE(acpu_freq_tbl)];
+
+        for (i = 0; acpu_freq_tbl[i].acpu_khz; i++) {
+		vdd_table[i]=acpu_freq_tbl[i].vdd;
+		freq_table[i]=acpu_freq_tbl[i].acpu_khz;
+                freq_count++;
+                if (acpu_freq_tbl[i].acpu_khz == khz)
+                        freq_index = i;
+        }
+
+        return avs_init(set_vdd, freq_count, freq_index, vdd_table, freq_table);
+}
+#endif // CONFIG_MSM_CPU_AVS
 
 void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 {
@@ -511,4 +578,53 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *clkdata)
 
 	acpuclk_init();
 	acpuclk_init_cpufreq_table();
+  drv_state.clk_ebi1 = clk_get(NULL,"ebi1_clk");
+#ifndef CONFIG_AXI_SCREEN_POLICY
+  clk_set_rate(drv_state.clk_ebi1, drv_state.current_speed->axiclk_khz * 1000);
+#endif
+
+#ifdef CONFIG_MSM_CPU_AVS
+	if (!acpu_avs_init(acpuclk_set_vdd_level,
+		drv_state.current_speed->acpu_khz)) {
+		printk("AVS init successful\n");
+	}
+#endif // CONFIG_MSM_CPU_AVS
+
 }
+
+#ifdef CONFIG_CPU_FREQ_VDD_LEVELS
+ssize_t acpuclk_get_vdd_levels_str(char *buf)
+{
+	int i, len = 0;
+	if (buf)
+	{
+		mutex_lock(&drv_state.lock);
+		for (i = 0; acpu_freq_tbl[i].acpu_khz; i++) 
+		{
+			if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+				len += sprintf(buf + len, "%8u: %4d\n", acpu_freq_tbl[i].acpu_khz, acpu_freq_tbl[i].vdd);
+		}
+		mutex_unlock(&drv_state.lock);
+	}
+	return len;
+}
+
+void acpuclk_set_vdd(unsigned acpu_khz, int vdd)
+{
+	int i;
+	vdd = vdd / 25 * 25;	//! regulator only accepts multiples of 25 (mV)
+	mutex_lock(&drv_state.lock);
+	for (i = 0; acpu_freq_tbl[i].acpu_khz; i++)
+	{
+		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
+		{
+			if (acpu_khz == 0)
+				acpu_freq_tbl[i].vdd = min(max((acpu_freq_tbl[i].vdd + vdd), BRAVO_TPS65023_MIN_UV_MV), BRAVO_TPS65023_MAX_UV_MV);
+			else if (acpu_freq_tbl[i].acpu_khz == acpu_khz)
+				acpu_freq_tbl[i].vdd = min(max(vdd, BRAVO_TPS65023_MIN_UV_MV), BRAVO_TPS65023_MAX_UV_MV);
+		}
+	}
+	mutex_unlock(&drv_state.lock);
+}
+#endif
+

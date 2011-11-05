@@ -195,7 +195,6 @@ int usb_register_dev(struct usb_interface *intf,
 		break;
 	}
 	up_write(&minor_rwsem);
-	
 	if (intf->minor < 0)
 		return -EXFULL;
 
@@ -216,7 +215,6 @@ int usb_register_dev(struct usb_interface *intf,
 		up_write(&minor_rwsem);
 		retval = PTR_ERR(intf->usb_dev);
 	}
-exit:
 	return retval;
 }
 EXPORT_SYMBOL_GPL(usb_register_dev);

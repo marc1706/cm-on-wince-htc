@@ -1168,8 +1168,10 @@ static void __init htcleo_init(void)
 	htcleo_init_mmc(0);
 	platform_device_register(&htcleo_timed_gpios);
 	
+#ifdef CONFIG_HTCLEO_BLINK_ON_BOOT
 	/* Blink the camera LED shortly to show that we're alive! */
 	htcleo_blink_camera_led();
+#endif
 
 }
 

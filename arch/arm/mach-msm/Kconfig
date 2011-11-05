@@ -717,3 +717,10 @@ config HTCLEO_BTN_BACKLIGHT_MANAGER
 	Use kernel button backlight manager to turn on/off backlight
 
 endif
+
+config HTCLEO_BLINK_ON_BOOT
+      depends on MACH_HTCLEO
+      default n
+      bool "Blink camera led on boot"
+      help
+	Blink camera led on boot. This might cause high battery drain.

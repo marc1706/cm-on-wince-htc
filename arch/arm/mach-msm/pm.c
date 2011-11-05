@@ -34,6 +34,9 @@
 #include "acpuclock.h"
 #include "proc_comm.h"
 #include "clock.h"
+#ifdef CONFIG_MSM_CPU_AVS
+#include "avs.h"
+#endif // CONFIG_MSM_CPU_AVS
 #ifdef CONFIG_HAS_WAKELOCK
 #include <linux/wakelock.h>
 #endif
@@ -66,6 +69,13 @@ static int msm_pm_idle_sleep_min_time = CONFIG_MSM7X00A_IDLE_SLEEP_MIN_TIME;
 module_param_named(idle_sleep_min_time, msm_pm_idle_sleep_min_time, int, S_IRUGO | S_IWUSR | S_IWGRP);
 static int msm_pm_idle_spin_time = CONFIG_MSM7X00A_IDLE_SPIN_TIME;
 module_param_named(idle_spin_time, msm_pm_idle_spin_time, int, S_IRUGO | S_IWUSR | S_IWGRP);
+
+#ifdef CONFIG_HTC_OFFMODE_ALARM
+static int offalarm_size = 10;
+static unsigned int offalarm[10];
+module_param_array_named(offalarm, offalarm, uint, &offalarm_size,
+                        S_IRUGO | S_IWUSR);
+#endif
 
 #if defined(CONFIG_ARCH_MSM7X30)
 #define A11S_CLK_SLEEP_EN (MSM_GCC_BASE + 0x020)
@@ -131,9 +141,11 @@ int msm_irq_idle_sleep_allowed(void);
 int msm_irq_pending(void);
 int clks_print_running(void);
 
+#ifdef CONFIG_AXI_SCREEN_POLICY
 static int axi_rate;
 static int sleep_axi_rate;
 static struct clk *axi_clk;
+#endif
 static uint32_t *msm_pm_reset_vector;
 
 static uint32_t msm_pm_max_sleep_time;
@@ -215,7 +227,7 @@ msm_pm_enter_prep_hw(void)
 	writel(4, A11S_SECOP);
 #else
 #if defined(CONFIG_ARCH_QSD8X50)
-	writel(0x1b, A11S_CLK_SLEEP_EN);
+	writel(0x1f, A11S_CLK_SLEEP_EN);
 #else
 	writel(0x1f, A11S_CLK_SLEEP_EN);
 #endif
@@ -240,10 +252,30 @@ msm_pm_exit_restore_hw(void)
 #endif
 }
 
+/*
+ * For speeding up boot time:
+ * During booting up, disable entering arch_idle() by disable_hlt()
+ * Enable it after booting up BOOT_LOCK_TIMEOUT sec.
+ */
+#define BOOT_LOCK_TIMEOUT      (60 * HZ)
+static void do_expire_boot_lock(struct work_struct *work)
+{
+        enable_hlt();
+        pr_info("Release 'boot-time' halt_lock\n");
+}
+static DECLARE_DELAYED_WORK(work_expire_boot_lock, do_expire_boot_lock);
+
 #ifdef CONFIG_MSM_FIQ_SUPPORT
 void msm_fiq_exit_sleep(void);
 #else
 static inline void msm_fiq_exit_sleep(void) { }
+#endif
+
+#ifdef CONFIG_HTC_POWER_COLLAPSE_MAGIC
+/* Set magic number in SMEM for power collapse state */
+#define HTC_POWER_COLLAPSE_ADD  (MSM_SHARED_RAM_BASE + 0x000F8000 + 0x000007F8)
+#define HTC_POWER_COLLAPSE_MAGIC_NUM    (HTC_POWER_COLLAPSE_ADD - 0x04)
+unsigned int magic_num;
 #endif
 
 static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
@@ -272,6 +304,11 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 	if (msm_pm_debug_mask & MSM_PM_DEBUG_SUSPEND)
 		printk(KERN_INFO "msm_sleep(): mode %d delay %u idle %d\n",
 		       sleep_mode, sleep_delay, from_idle);
+
+#ifdef CONFIG_MSM_CPU_AVS
+	if(avs_enabled() && !from_idle)
+		avs_set_default_vdds();
+#endif // CONFIG_MSM_CPU_AVS
 
 #ifndef CONFIG_ARCH_MSM_SCORPION
 	switch (sleep_mode) {
@@ -374,16 +411,22 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 	}
 
 	if (sleep_mode <= MSM_PM_SLEEP_MODE_RAMP_DOWN_AND_WAIT_FOR_INTERRUPT) {
-		pm_saved_acpu_clk_rate = acpuclk_power_collapse();
+		pm_saved_acpu_clk_rate = acpuclk_power_collapse(from_idle);
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_CLOCK)
 			printk(KERN_INFO "msm_sleep(): %ld enter power collapse"
 			       "\n", pm_saved_acpu_clk_rate);
 		if (pm_saved_acpu_clk_rate == 0)
 			goto ramp_down_failed;
 
+#ifdef CONFIG_AXI_SCREEN_POLICY
 		/* Drop AXI request when the screen is on */
 		if (axi_rate)
 			clk_set_rate(axi_clk, sleep_axi_rate);
+#endif
+#ifdef CONFIG_HTC_POWER_COLLAPSE_MAGIC
+        magic_num = 0xAAAA1111;
+        writel(magic_num, HTC_POWER_COLLAPSE_MAGIC_NUM);
+#endif
 	}
 	if (sleep_mode < MSM_PM_SLEEP_MODE_APPS_SLEEP) {
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_SMSM_STATE)
@@ -405,6 +448,12 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 			msm_fiq_exit_sleep();
 			local_fiq_enable();
 			rv = 0;
+			// after power collapse the avs delays need to be reinitialised
+#ifdef CONFIG_MSM_CPU_AVS
+			if(avs_enabled()) {
+				avs_enable(1);
+			}
+#endif // CONFIG_MSM_CPU_AVS
 		}
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_POWER_COLLAPSE)
 			printk(KERN_INFO "msm_pm_collapse(): returned %d\n",
@@ -415,18 +464,28 @@ static int msm_sleep(int sleep_mode, uint32_t sleep_delay, int from_idle)
 		msm_arch_idle();
 		rv = 0;
 	}
-
+#ifdef CONFIG_HTC_POWER_COLLAPSE_MAGIC
+        magic_num = 0xBBBB9999;
+        writel(magic_num, HTC_POWER_COLLAPSE_MAGIC_NUM);
+#endif
 	if (sleep_mode <= MSM_PM_SLEEP_MODE_RAMP_DOWN_AND_WAIT_FOR_INTERRUPT) {
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_CLOCK)
 			printk(KERN_INFO "msm_sleep(): exit power collapse %ld"
 			       "\n", pm_saved_acpu_clk_rate);
-		if (acpuclk_set_rate(pm_saved_acpu_clk_rate, 1) < 0)
+#if defined(CONFIG_ARCH_QSD8X50)
+    if (acpuclk_set_rate(pm_saved_acpu_clk_rate, SETRATE_SWFI) < 0)
+#else
+    if (acpuclk_set_rate(pm_saved_acpu_clk_rate,
+      from_idle ? SETRATE_PC_IDLE : SETRATE_PC) < 0)
+#endif
 			printk(KERN_ERR "msm_sleep(): clk_set_rate %ld "
 			       "failed\n", pm_saved_acpu_clk_rate);
 
+#ifdef CONFIG_AXI_SCREEN_POLICY
 		/* Restore axi rate if needed */
 		if (axi_rate)
 			clk_set_rate(axi_clk, axi_rate);
+#endif
 	}
 	if (msm_pm_debug_mask & MSM_PM_DEBUG_STATE)
 		printk(KERN_INFO "msm_sleep(): exit A11S_CLK_SLEEP_EN %x, "
@@ -535,7 +594,12 @@ void arch_idle(void)
 		if (msm_pm_debug_mask & MSM_PM_DEBUG_CLOCK)
 			printk(KERN_DEBUG "msm_sleep: clk swfi -> %ld\n",
 				saved_rate);
-		if (acpuclk_set_rate(saved_rate, 1) < 0)
+#if defined(CONFIG_ARCH_QSD8X50)
+    if (saved_rate && acpuclk_set_rate(saved_rate, SETRATE_SWFI) < 0)
+#else
+    if (saved_rate
+        && acpuclk_set_rate(saved_rate, SETRATE_SWFI) < 0)
+#endif
 			printk(KERN_ERR "msm_sleep(): clk_set_rate %ld "
 			       "failed\n", saved_rate);
 #ifdef CONFIG_MSM_IDLE_STATS
@@ -588,10 +652,61 @@ static uint32_t restart_reason = 0x776655AA;
 static uint32_t restart_reason = 0;
 #endif
 
+static int msm_wakeup_after;    /* default, no wakeup by alarm */
+static int msm_power_wakeup_after(const char *val, struct kernel_param *kp)
+{
+        int ret;
+
+        ret = param_set_int(val, kp);
+        printk(KERN_INFO "+msm_power_wakeup_after, ret=%d\r\n", ret);
+
+        if (!ret) {
+                printk(KERN_INFO "msm_wakeup_after=%d\r\n", msm_wakeup_after);
+                if (msm_wakeup_after < 0)
+                        msm_wakeup_after = 0; /* invalid, no wakeup */
+        }
+        printk(KERN_INFO "-msm_power_wakeup_after, msm_wakeup_after=%d\r\n", msm_wakeup_after);
+        return ret;
+}
+
+module_param_call(wakeup_after, msm_power_wakeup_after, param_get_int,
+                  &msm_wakeup_after, S_IWUSR | S_IRUGO);
+
+#ifdef CONFIG_HTC_OFFMODE_ALARM
+static int set_offmode_alarm(void)
+{
+        struct timespec rtc_now;
+        int next_alarm_interval;
+        int i;
+
+        getnstimeofday(&rtc_now);
+        for (i = 0; i < offalarm_size; i++) {
+                next_alarm_interval = (offalarm[i] - rtc_now.tv_sec) * 1000;
+                if (next_alarm_interval > 0) {
+                        if (msm_wakeup_after == 0)
+                                msm_wakeup_after = next_alarm_interval;
+                        else if (next_alarm_interval < msm_wakeup_after)
+                                msm_wakeup_after = next_alarm_interval;
+                }
+        }
+
+        return 0;
+}
+#endif
+
 static void msm_pm_power_off(void)
 {
-	msm_proc_comm(PCOM_POWER_DOWN, 0, 0);
-	for (;;) ;
+        printk(KERN_INFO "msm_pm_power_off:wakeup after %d\r\n", msm_wakeup_after);
+
+#ifdef CONFIG_HTC_OFFMODE_ALARM
+        set_offmode_alarm();
+#endif
+        if (msm_wakeup_after)
+                msm_proc_comm(PCOM_SET_RTC_ALARM, &msm_wakeup_after, 0);
+
+        msm_proc_comm(PCOM_POWER_DOWN, 0, 0);
+
+        for (;;) ;
 }
 
 static bool console_flushed;
@@ -619,7 +734,7 @@ void msm_pm_flush_console(void)
 	release_console_sem();
 }
 
-static void msm_pm_restart(char str)
+static void msm_pm_restart(char str, const char *cmd)
 {
 	msm_pm_flush_console();
 
@@ -731,6 +846,7 @@ void msm_pm_set_max_sleep_time(int64_t max_sleep_time_ns)
 EXPORT_SYMBOL(msm_pm_set_max_sleep_time);
 
 #if defined(CONFIG_EARLYSUSPEND) && defined(CONFIG_ARCH_MSM_SCORPION)
+#ifdef CONFIG_AXI_SCREEN_POLICY
 /* axi 128 screen on, 61mhz screen off */
 static void axi_early_suspend(struct early_suspend *handler) {
 	axi_rate = 0;
@@ -739,7 +855,7 @@ static void axi_early_suspend(struct early_suspend *handler) {
 
 static void axi_late_resume(struct early_suspend *handler) {
 	axi_rate = 128000000;
-	sleep_axi_rate = 120000000;
+	sleep_axi_rate = 117000000;
 	clk_set_rate(axi_clk, axi_rate);
 }
 
@@ -748,7 +864,9 @@ static struct early_suspend axi_screen_suspend = {
 	.resume = axi_late_resume,
 };
 #endif
+#endif
 
+#ifdef CONFIG_AXI_SCREEN_POLICY
 static void __init msm_pm_axi_init(void)
 {
 #if defined(CONFIG_EARLYSUSPEND) && defined(CONFIG_ARCH_MSM_SCORPION)
@@ -759,21 +877,23 @@ static void __init msm_pm_axi_init(void)
 		return;
 	}
 	axi_rate = 128000000;
-	sleep_axi_rate = 120000000;
+	sleep_axi_rate = 117000000;
 	clk_set_rate(axi_clk, axi_rate);
 	register_early_suspend(&axi_screen_suspend);
 #else
 	axi_rate = 0;
 #endif
 }
+#endif
 
 static int __init msm_pm_init(void)
 {
 	pm_power_off = msm_pm_power_off;
 	arm_pm_restart = msm_pm_restart;
 	msm_pm_max_sleep_time = 0;
+#ifdef CONFIG_AXI_SCREEN_POLICY
 	msm_pm_axi_init();
-
+#endif
 	register_reboot_notifier(&msm_reboot_notifier);
 
 	msm_pm_reset_vector = ioremap(RESET_VECTOR, PAGE_SIZE);
@@ -788,6 +908,10 @@ static int __init msm_pm_init(void)
 	create_proc_read_entry("msm_pm_stats", S_IRUGO,
 				NULL, msm_pm_read_proc, NULL);
 #endif
+        disable_hlt();
+        schedule_delayed_work(&work_expire_boot_lock, BOOT_LOCK_TIMEOUT);
+        pr_info("Acquire 'boot-time' halt_lock\n");
+
 	return 0;
 }
 

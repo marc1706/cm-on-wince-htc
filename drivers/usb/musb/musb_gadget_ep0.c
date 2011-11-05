@@ -302,7 +302,7 @@ __acquires(musb->lock)
 						 MUSB_RXCSR_P_SENTSTALL);
 					musb_writew(regs, MUSB_RXCSR, csr);
 				}
-				
+
 				/* Maybe start the first request in the queue */
 				request = to_musb_request(
 						next_request(musb_ep));
