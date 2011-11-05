@@ -124,11 +124,9 @@ static void __init acpuclk_init_cpufreq_table(void)
 		freq_table[i].index = i;
 		freq_table[i].frequency = CPUFREQ_ENTRY_INVALID;
 
-		/* Define speeds that we want to skip */
-		if (/* acpu_freq_tbl[i].acpu_khz == 256000 || */
-				acpu_freq_tbl[i].acpu_khz == 19200 ||
-				acpu_freq_tbl[i].acpu_khz == 128000 || 
-				acpu_freq_tbl[i].acpu_khz == 256000)
+		/* Skip speeds we don't want */
+		if (	acpu_freq_tbl[i].acpu_khz == 19200 ||
+			acpu_freq_tbl[i].acpu_khz == 256000)
 			continue;
 
 		vdd = acpu_freq_tbl[i].vdd;
@@ -619,9 +617,9 @@ void acpuclk_set_vdd(unsigned acpu_khz, int vdd)
 		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
 		{
 			if (acpu_khz == 0)
-				acpu_freq_tbl[i].vdd = min(max((acpu_freq_tbl[i].vdd + vdd), BRAVO_TPS65023_MIN_UV_MV), BRAVO_TPS65023_MAX_UV_MV);
+				acpu_freq_tbl[i].vdd = min(max((acpu_freq_tbl[i].vdd + vdd), HTCLEO_TPS65023_MIN_UV_MV), HTCLEO_TPS65023_MAX_UV_MV);
 			else if (acpu_freq_tbl[i].acpu_khz == acpu_khz)
-				acpu_freq_tbl[i].vdd = min(max(vdd, BRAVO_TPS65023_MIN_UV_MV), BRAVO_TPS65023_MAX_UV_MV);
+				acpu_freq_tbl[i].vdd = min(max(vdd, HTCLEO_TPS65023_MIN_UV_MV), HTCLEO_TPS65023_MAX_UV_MV);
 		}
 	}
 	mutex_unlock(&drv_state.lock);
