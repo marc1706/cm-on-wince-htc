@@ -62,8 +62,23 @@ int __init parse_tag_skuid(const struct tag * tags);
 int __init parse_tag_engineerid(const struct tag * tags);
 int __init parse_tag_monodie(const struct tag * tags);
 
-void notify_usb_connected(int online);
+//void notify_usb_connected(int online);
 
 char *board_serialno(void);
+
+/*
+ * Obviously, we need these in all project.
+ * To export a function to get these is too lousy.
+ * Each BSP can include board.h to get these.
+ *
+ * Jay, 15/May/09'
+ * */
+extern int panel_type;
+extern unsigned engineer_id;
+extern int usb_phy_error;
+
+#if defined(CONFIG_ARCH_MSM8X60)
+unsigned int get_radio_flag(void);
+#endif
 
 #endif

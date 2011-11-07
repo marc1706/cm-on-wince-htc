@@ -283,7 +283,7 @@ static struct i2c_board_info base_i2c_devices[] =
 // USB 
 ///////////////////////////////////////////////////////////////////////
 
-extern void notify_usb_connected(int);
+//extern void notify_usb_connected(int);
 
 static int htcleo_phy_init_seq[] = {0x0C, 0x31,0x0C, 0x31, 0x30, 0x32, 0x1D, 0x0D, 0x1D, 0x10, -1};
 
@@ -309,6 +309,7 @@ static void htcleo_usb_phy_reset(void)
 	}
 }
 
+#if 0
 static void htcleo_usb_hw_reset(bool enable)
 {
 	u32 id;
@@ -325,13 +326,15 @@ static void htcleo_usb_hw_reset(bool enable)
 		pr_err("%s: Cannot set reset to %d (%d)\n", __func__, enable,
 		       ret);
 }
+#endif
 
 
 static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= htcleo_phy_init_seq,
 	.phy_reset		= htcleo_usb_phy_reset,
-	.hw_reset		= htcleo_usb_hw_reset,
-	.usb_connected		= notify_usb_connected,
+	//.hw_reset		= htcleo_usb_hw_reset,
+	//.usb_connected		= notify_usb_connected,
+	.accessory_detect = 0, /* detect by ID pin gpio */
 };
 
 static char *usb_functions_ums[] = {
@@ -1111,6 +1114,7 @@ static void do_sdc1_reset(void)
 	*sdc1_clk &= ~(1 << 9);
 }
 
+#ifdef CONFIG_HTCLEO_BLINK_ON_BOOT
 static void __init htcleo_blink_camera_led(void){
 	volatile unsigned *bank6_in, *bank6_out;
 	bank6_in = (unsigned int*)(MSM_GPIO1_BASE + 0x0864);
@@ -1120,6 +1124,7 @@ static void __init htcleo_blink_camera_led(void){
 	*bank6_out = *bank6_in | 0x200000;
 	mdelay(200);
 }
+#endif // CONFIG_HTCLEO_BLINK_ON_BOOT
 
 ///////////////////////////////////////////////////////////////////////
 // Init

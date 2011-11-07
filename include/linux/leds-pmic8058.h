@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -26,34 +26,31 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#ifndef __MACH_CLK_H
-#define __MACH_CLK_H
+#ifndef __LEDS_PMIC8058_H__
+#define __LEDS_PMIC8058_H__
 
-/* Magic rate value for use with PM QOS to request the board's maximum
- * supported AXI rate. PM QOS will only pass positive s32 rate values
- * through to the clock driver, so INT_MAX is used.
- */
-#define MSM_AXI_MAX_FREQ	LONG_MAX
-
-enum clk_reset_action {
-	CLK_RESET_DEASSERT	= 0,
-	CLK_RESET_ASSERT	= 1
+enum pmic8058_leds {
+	PMIC8058_ID_LED_KB_LIGHT = 1,
+	PMIC8058_ID_LED_0,
+	PMIC8058_ID_LED_1,
+	PMIC8058_ID_LED_2,
+	PMIC8058_ID_FLASH_LED_0,
+	PMIC8058_ID_FLASH_LED_1,
 };
 
-struct clk;
+struct pmic8058_led {
+	const char	*name;
+	const char	*default_trigger;
+	unsigned	max_brightness;
+	int		id;
+};
 
-/* Rate is minimum clock rate in Hz */
-int clk_set_min_rate(struct clk *clk, unsigned long rate);
+struct pmic8058_leds_platform_data {
+	int	num_leds;
+	struct pmic8058_led *leds;
+};
 
-/* Rate is maximum clock rate in Hz */
-int clk_set_max_rate(struct clk *clk, unsigned long rate);
+int pm8058_set_flash_led_current(enum pmic8058_leds id, unsigned mA);
+int pm8058_set_led_current(enum pmic8058_leds id, unsigned mA);
 
-/* Assert/Deassert reset to a hardware block associated with a clock */
-int clk_reset(struct clk *clk, enum clk_reset_action action);
-
-/* Set clock-specific configuration parameters */
-int clk_set_flags(struct clk *clk, unsigned long flags);
-
-unsigned long acpuclk_get_max_axi_rate(void);
-
-#endif
+#endif /* __LEDS_PMIC8058_H__ */
