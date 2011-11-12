@@ -107,7 +107,7 @@
 #define HTCLEO_GPIO_BT_UART1_TX     		46
 #define HTCLEO_GPIO_BT_RESET_N      		146
 #define HTCLEO_GPIO_BT_SHUTDOWN_N   		128
-#define HTCLEO_GPIO_BT_HOST_WAKE    		86
+#define HTCLEO_GPIO_BT_HOST_WAKE    		86 /* @todo: compare 86 to original 37 */
 #define HTCLEO_GPIO_BT_CHIP_WAKE    		57
 
 /* Battery */
@@ -116,6 +116,8 @@
 #define HTCLEO_GPIO_BATTERY_OVER_CHG		147
 #define HTCLEO_GPIO_POWER_USB     		109
 #define HTCLEO_GPIO_USBPHY_3V3_ENABLE		104
+#define HTCLEO_GPIO_USB_ID_PIN				142	/*USB ID pin*/
+#define HTCLEO_GPIO_USB_ID1_PIN				36	/*USB ID pin*/
 
 /* Touchscreen */
 #define HTCLEO_GPIO_TS_POWER			160
@@ -181,9 +183,6 @@ struct microp_led_platform_data {
         struct microp_led_config *led_config;
         int num_leds;
 };
-
-
-
 
 int htcleo_pm_set_vreg(int enable, unsigned id);
 int __init htcleo_init_panel(void);
