@@ -77,7 +77,7 @@ static unsigned int nand_boot = 0;
 ///////////////////////////////////////////////////////////////////////
 int htcleo_is_nand_boot(void)
 {
-	return nand_boot;	
+	return nand_boot;
 }
 
 static int __init parse_tag_nand_boot(const struct tag *tag)
