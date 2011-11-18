@@ -13,10 +13,10 @@
  *
  */
 
-#include <linux/gpio.h>
+//#include <linux/gpio.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-#include <linux/interrupt.h>
+//#include <linux/interrupt.h>
 
 #include <linux/dma-mapping.h>
 #include <mach/irqs.h>
@@ -25,12 +25,12 @@
 #include <mach/board.h>
 
 #include "devices.h"
-#include "proc_comm.h"
+//#include "proc_comm.h"
 
 #include <asm/mach/flash.h>
-#include <asm/mach/mmc.h>
-#include <linux/mtd/nand.h>
-#include <linux/mtd/partitions.h>
+//#include <asm/mach/mmc.h>
+//#include <linux/mtd/nand.h>
+//#include <linux/mtd/partitions.h>
 
 #include <mach/mmc.h>
 
@@ -48,7 +48,7 @@
 
 static char *df_serialno = "000000000000";
 static char *board_sn;
-int usb_phy_error;
+//int usb_phy_error;
 
 #define HSUSB_API_INIT_PHY_PROC	2
 #define HSUSB_API_PROG		0x30000064
@@ -56,6 +56,8 @@ int usb_phy_error;
 
 #define MFG_GPIO_TABLE_MAX_SIZE        0x400
 static unsigned char mfg_gpio_table[MFG_GPIO_TABLE_MAX_SIZE];
+
+#if 0
 
 static struct resource resources_uart1[] = {
 	{
@@ -624,6 +626,7 @@ struct platform_device msm_device_spi = {
 	.num_resources	= ARRAY_SIZE(resources_spi),
 	.resource	= resources_spi,
 };
+#endif
 
 struct clk msm_clocks_8x50[] = {
 	CLK_PCOM("adm_clk",	ADM_CLK,	NULL, 0),
@@ -829,4 +832,3 @@ int board_emmc_boot(void)
 
 	return 0;
 }
-
