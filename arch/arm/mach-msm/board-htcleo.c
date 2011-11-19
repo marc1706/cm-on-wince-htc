@@ -1035,12 +1035,12 @@ static void __init msm_device_i2c_init(void)
 ///////////////////////////////////////////////////////////////////////
 
 static struct msm_acpu_clock_platform_data htcleo_clock_data = {
-	.acpu_switch_time_us	= 20,
+	.acpu_switch_time_us	= 20/4, // tweak from bananacake's kernel
 	.max_speed_delta_khz	= 256000,
-	.vdd_switch_time_us	= 62,
-	.power_collapse_khz	= 128000, // @todo: test if 128000 works
-	.wait_for_irq_khz	= 128000, // @todo: bravo sets this to 0, try it out
-//	.wait_for_irq_khz	= 19200,   // TCXO
+	.vdd_switch_time_us	= 62/4, // tweak from bananacake's kernel
+	.power_collapse_khz	= 245000, // don't set this to less than 245000
+	.wait_for_irq_khz	= 0, // setting for desire, test it
+//	.wait_for_irq_khz	= 245000,
 };
 
 ///////////////////////////////////////////////////////////////////////
