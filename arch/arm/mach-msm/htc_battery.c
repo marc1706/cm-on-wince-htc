@@ -1710,7 +1710,7 @@ static int htc_battery_probe(struct platform_device *pdev)
 {
 	int rc = 0;
 	struct htc_battery_platform_data *pdata = pdev->dev.platform_data;
- pr_info("Battery Probe\n");
+	pr_info("HTC Battery Probe\n");
 	htc_batt_info.device_id = pdev->id;
 	htc_batt_info.gpio_usb_id = pdata->gpio_usb_id;
 	htc_batt_info.gpio_power = pdata->gpio_power;
@@ -1759,7 +1759,7 @@ static int htc_battery_probe(struct platform_device *pdev)
 #if defined(CONFIG_MACH_HTCLEO)
 	if(pdata->force_no_rpc) {
 		htc_battery_core_probe(pdev);
-		htc_cable_status_update(get_vbus_state());
+		msm_hsusb_set_vbus_state(get_vbus_state());
 	}
 #endif
  pr_info("Battery Probe done\n");
