@@ -224,9 +224,6 @@ void notify_cable_status(int status)
 {
 	pr_info("notify_cable_status(%d)\n", status);
 	msm_hsusb_set_vbus_state(status);
-	power_supply_changed(&htc_power_supplies[CHARGER_USB]);
-	power_supply_changed(&htc_power_supplies[CHARGER_AC]);
-	power_supply_changed(&htc_power_supplies[CHARGER_BATTERY]);
 }
 
 // called from DEX intrrupt

@@ -107,7 +107,7 @@
 #define HTCLEO_GPIO_BT_UART1_TX     		46
 #define HTCLEO_GPIO_BT_RESET_N      		146
 #define HTCLEO_GPIO_BT_SHUTDOWN_N   		128
-#define HTCLEO_GPIO_BT_HOST_WAKE    		86 /* @todo: compare 86 to original 37 */
+#define HTCLEO_GPIO_BT_HOST_WAKE    		37
 #define HTCLEO_GPIO_BT_CHIP_WAKE    		57
 
 /* Battery */
