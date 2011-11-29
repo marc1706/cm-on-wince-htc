@@ -52,6 +52,44 @@ config MSM_MDP40
 	depends on ARCH_MSM7X30
 	default y
 
+config PERFLOCK
+  depends on CPU_FREQ
+  depends on ARCH_QSD8X50 || ARCH_MSM7X30 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "HTC Performance Lock"
+
+config PERFLOCK_BOOT_LOCK
+  depends on PERFLOCK
+  depends on ARCH_QSD8X50 || ARCH_MSM7X30 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "Boot Time Performance Lock"
+
+config PERFLOCK_SCREEN_POLICY
+  depends on PERFLOCK
+  depends on ARCH_QSD8X50 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  default n
+  bool "Change Cpufreq Policy while Screen ON/OFF"
+
+config PERFLOCK_SCREEN_ON_MIN
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Minimum speed while screen on"
+  default MSM_CPU_FREQ_MIN
+
+config PERFLOCK_SCREEN_ON_MAX
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Maximum speed while screen on"
+  default MSM_CPU_FREQ_MAX
+
+config PERFLOCK_SCREEN_OFF_MIN
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Minimum speed while screen off"
+  default MSM_CPU_FREQ_MIN
+
+config PERFLOCK_SCREEN_OFF_MAX
+  depends on PERFLOCK_SCREEN_POLICY
+  int "Maximum speed while screen off"
+  default MSM_CPU_FREQ_MAX
+
 config MSM_REMOTE_SPINLOCK_DEKKERS
 	bool
 
@@ -70,25 +108,18 @@ config MSM_REMOTE_SPINLOCK
 config MSM_LEGACY_7X00A_AMSS
 	bool
 
-config TURBO_MODE
-    bool "Turbo mode"
-    depends on ARCH_MSM7225 || ARCH_MSM7X00A
-    default n
-    help
-      This option is used to indicate hardware support for running the
-      memory bus at a higher speed.(only for 7X00A/7225)
-
 config MSM_AMSS_VERSION
 	int
 	default 6210 if MSM_AMSS_VERSION_6210
 	default 6220 if MSM_AMSS_VERSION_6220
 	default 6225 if MSM_AMSS_VERSION_6225
 	default 6350 if MSM_AMSS_VERSION_6350
+        default 3200 if MSM_AMSS_VERSION_3200
 
 choice
 	prompt "AMSS modem firmware version"
 
-	depends on ARCH_MSM7X00A
+	depends on ARCH_MSM7X00A || ARCH_QSD8X50
 	default MSM_AMSS_VERSION_6225
 
 	config MSM_AMSS_VERSION_6210
@@ -105,6 +136,9 @@ choice
 
 	config MSM_AMSS_VERSION_6350
 		bool "6.3.50"
+         
+         config MSM_AMSS_VERSION_3200
+ 	        bool "3.2.00"
 endchoice
 
 menu "Qualcomm MSM Board Type"
@@ -237,6 +271,13 @@ config MACH_HTCLEO
 	help
 	  Select this to support the HTC Leo device
 
+config MACH_SUPERSONIC
+	depends on ARCH_QSD8X50
+	default y
+	bool "Supersonic (HTC EVO 4G)"
+	help
+	  Select this to support the Supersonic device
+
 config MACH_QSD8X50_FFA
 	depends on ARCH_QSD8X50
 	default y
@@ -263,6 +304,13 @@ config HTC_HEADSET_GPIO
 	default n
 	help
 	  Provides support of HTC GPIO headset detection.
+
+config JESUS_PHONE
+	depends on ARCH_QSD8X50 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+	default n
+	bool "Enable Jesus Phone mode (DANGEROUS)"
+	help
+	 Enable support for dangerous acpuclock frequencies/voltages.
 
 config HTC_HEADSET
 	tristate "HTC 2 Wire detection driver"
@@ -296,6 +344,16 @@ config HTC_BATTCHG
 	default n
 	bool "HTC battery / charger driver"
 
+config HTC_BATTCHG
+	depends on MSM_ONCRPCROUTER && POWER_SUPPLY
+	default n
+	bool "HTC battery / charger driver"
+
+config HTC_BATTCHG_SMEM
+	depends on HTC_BATTCHG
+	default n
+	bool "Read Battery Info via SMEM"
+
 config HTC_PWRSPLY
 	depends on MSM_ONCRPCROUTER && POWER_SUPPLY && !TROUT_BATTCHG
 	default y
@@ -307,6 +365,14 @@ config HTC_PWRSINK
 	depends on MSM_SMD
 	default y
 	bool "HTC Power Sink Driver"
+
+config HTC_POWER_COLLAPSE_MAGIC
+  default n
+  bool "Check Power Collapse State"
+
+config HTC_ONMODE_CHARGING
+  default n
+  bool "Low-power hibernate charging support"
 
 config CACHE_FLUSH_RANGE_LIMIT
 	hex "Cache flush range limit"
@@ -329,7 +395,7 @@ choice
 		bool "DG Timer"
 	help
 	  High resolution timer.
-endchoice	  
+endchoice
 
 choice
 	prompt "Suspend sleep mode"
@@ -356,7 +422,7 @@ choice
 
 	config MSM7X00A_SLEEP_WAIT_FOR_INTERRUPT
 		bool "Wait for interrupt"
-endchoice	  
+endchoice
 
 config MSM7X00A_SLEEP_MODE
 	int
@@ -391,7 +457,7 @@ choice
 
 	config MSM7X00A_IDLE_SLEEP_WAIT_FOR_INTERRUPT
 		bool "Wait for interrupt"
-endchoice	  
+endchoice
 
 config MSM7X00A_IDLE_SLEEP_MODE
 	int
@@ -482,7 +548,7 @@ config MSM_SMD
 	bool
 
 config MSM_DAL
-	default n 
+	default n
 	bool "MSM Driver Access Layer (DAL RPC)"
 	help
 	  Support for the DAL RPC interface used to communicate with
@@ -498,7 +564,7 @@ config MSM_ONCRPCROUTER
 	  the ARM9 and ARM11
 
 config MSM_RPCSERVERS
-	depends on MSM_ONCRPCROUTER && ARCH_MSM7X00A
+	depends on MSM_ONCRPCROUTER
 	default y
 	bool "Kernel side RPC server bundle"
 	help
@@ -525,6 +591,14 @@ config MSM_CPU_FREQ_MIN
 
 endif # CPU_FREQ_MSM
 
+config AXI_SCREEN_POLICY
+        depends on ARCH_QSD8X50 || ARCH_MSM7X00A || ARCH_MSM7227 || ARCH_MSM7225
+  depends on HAS_EARLYSUSPEND
+  bool "Use higher AXI bus while screen ON"
+  default n
+  help
+    Simple AXI scaling based on screen ON/OFF and PWRC.
+
 config MSM_HW3D
 	tristate "MSM Hardware 3D Register Driver"
 	depends on EARLYSUSPEND
@@ -539,6 +613,21 @@ config MSM_ADSP
 	default y
 	help
 	  Provides access to registers needed by the userspace aDSP library.
+
+config HTC_ACOUSTIC
+        tristate "HTC acoustic driver"
+        default y
+        help
+          The driver provide user space use shared memory allocate by using
+          RPC code.
+
+config HTC_ACOUSTIC_QSD
+        tristate "HTC acoustic driver for QSD"
+        depends on ARCH_QSD8X50
+        default n
+        help
+          Provides user space use shared memory allocate by using RPC code.
+          Provides headset amp, mic bias and speaker amp control.
 
 config MSM_ADSP_REPORT_EVENTS
 	bool "Report modem events from the DSP"
@@ -573,7 +662,7 @@ config WIFI_CONTROL_FUNC
 	bool "Enable WiFi control function abstraction"
 	help
 	  Enables Power/Reset/Carddetect function abstraction
-	
+
 config WIFI_MEM_PREALLOC
 	depends on WIFI_CONTROL_FUNC
 	bool "Preallocate memory for WiFi buffers"
@@ -581,11 +670,36 @@ config WIFI_MEM_PREALLOC
 	  Preallocates memory buffers for WiFi driver
 
 config ARCH_MSM_FLASHLIGHT
-        bool "Flashlight Driver for MSM series"
+        bool "Flashlight Driver"
         depends on ARCH_MSM
-        default n
         help
           The flashlight driver is for MSM series.
+
+config MICROP_COMMON
+        tristate "MICROP COMMON Driver"
+        depends on I2C
+        help
+          HTC Microp-P support.
+
+config HTC_HEADSET_MGR
+        tristate "HTC headset manager driver"
+        default n
+        help
+          Provides support of HTC headset manager.
+
+config HTC_HEADSET_GPIO
+        tristate "HTC GPIO headset detection driver"
+        depends on HTC_HEADSET_MGR
+        default n
+        help
+          Provides support of HTC GPIO headset detection.
+
+config HTC_HEADSET_MICROP
+        tristate "HTC Micro-P headset detection driver"
+        depends on HTC_HEADSET_MGR && MICROP_COMMON
+        default n
+        help
+          Provides support of HTC Micro-P headset detection.
 
 config VIRTUAL_KPANIC_PARTITION
 	bool "Create virtual kpanic partition"
@@ -608,6 +722,8 @@ config VIRTUAL_KPANIC_SRC
 	default "cache"
 	help
 	  Sets the partition to steal from to make the virtual one.
+
+
 config PHYS_OFFSET
        hex
        depends on MACH_HTCLEO

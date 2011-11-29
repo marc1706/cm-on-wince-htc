@@ -741,16 +741,6 @@ static uint32_t camera_on_gpio_table[] = {
 	PCOM_GPIO_CFG(15, 1, GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_16MA), /* MCLK */
 };
 
-static void config_gpio_table(uint32_t *table, int len)
-{
-	int n;
-	unsigned id;
-	for(n = 0; n < len; n++) {
-		id = table[n];
-		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
-	}
-}
-
 static void config_camera_on_gpios(void)
 {
 	config_gpio_table(camera_on_gpio_table,
@@ -774,11 +764,7 @@ static struct msm_acpu_clock_platform_data trout_clock_data = {
 	.max_speed_delta_khz = 256000,
 	.vdd_switch_time_us = 62,
 	.power_collapse_khz = 19200000,
-#if defined(CONFIG_TURBO_MODE)
-	.wait_for_irq_khz = 176000000,
-#else
 	.wait_for_irq_khz = 128000000,
-#endif
 };
 
 #ifdef CONFIG_SERIAL_MSM_HS

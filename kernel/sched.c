@@ -722,8 +722,8 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 		size_t cnt, loff_t *ppos)
 {
 	char buf[64];
-	char *cmp = buf;
-	int neg = 0, cmplen;
+	char *cmp;
+	int neg = 0;
 	int i;
 
 	if (cnt > 63)
@@ -733,25 +733,15 @@ sched_feat_write(struct file *filp, const char __user *ubuf,
 		return -EFAULT;
 
 	buf[cnt] = 0;
-	for (i = 0; i < cnt; i++) {
-		if (buf[i] == '\n' || buf[i] == ' ') {
-			buf[i] = 0;
-			break;
-		}
-	}
+	cmp = strstrip(buf);
 
 	if (strncmp(buf, "NO_", 3) == 0) {
 		neg = 1;
 		cmp += 3;
 	}
 
-	cmplen = strlen(cmp);
 	for (i = 0; sched_feat_names[i]; i++) {
-		int len = strlen(sched_feat_names[i]);
-
-		if (cmplen != len)
-			continue;
-		if (strncmp(cmp, sched_feat_names[i], len) == 0) {
+		if (strcmp(cmp, sched_feat_names[i]) == 0) {
 			if (neg)
 				sysctl_sched_features &= ~(1UL << i);
 			else
@@ -1840,12 +1830,6 @@ static void dec_nr_running(struct rq *rq)
 
 static void set_load_weight(struct task_struct *p)
 {
-	if (task_has_rt_policy(p)) {
-		p->se.load.weight = 0;
-		p->se.load.inv_weight = WMULT_CONST;
-		return;
-	}
-
 	/*
 	 * SCHED_IDLE tasks get minimal weight:
 	 */
@@ -1983,9 +1967,6 @@ task_hot(struct task_struct *p, u64 now, struct sched_domain *sd)
 	s64 delta;
 
 	if (p->sched_class != &fair_sched_class)
-		return 0;
-
-	if (p->policy == SCHED_IDLE)
 		return 0;
 
 	/*
@@ -2292,20 +2273,6 @@ static int try_to_wake_up(struct task_struct *p, unsigned int state,
 	unsigned long en_flags = ENQUEUE_WAKEUP;
 	struct rq *rq;
 
-	if (sched_feat(INTERACTIVE) && !(wake_flags & WF_FORK)) {
-		if (current->sched_wake_interactive ||
-				wake_flags & WF_INTERACTIVE ||
-				current->se.interactive)
-			en_flags |= ENQUEUE_LATENCY;
-	}
-
-	if (sched_feat(TIMER) && !(wake_flags & WF_FORK)) {
-		if (current->sched_wake_timer ||
-				wake_flags & WF_TIMER ||
-				current->se.timer)
-			en_flags |= ENQUEUE_TIMER;
-	}
-
 	this_cpu = get_cpu();
 
 	smp_wmb();
@@ -2507,14 +2474,6 @@ void sched_fork(struct task_struct *p, int clone_flags)
 
 	if (!rt_prio(p->prio))
 		p->sched_class = &fair_sched_class;
-
-	if ((sched_feat(INTERACTIVE_FORK_EXPEDITED)
-	     && (current->sched_wake_interactive || current->se.interactive))
-	    || (sched_feat(TIMER_FORK_EXPEDITED)
-	     && (current->sched_wake_timer || current->se.timer)))
-		p->se.fork_expedited = 1;
-	else
-		p->se.fork_expedited = 0;
 
 	if (p->sched_class->task_fork)
 		p->sched_class->task_fork(p);
@@ -3639,13 +3598,8 @@ need_resched_nonpreemptible:
 	if (prev->state && !(preempt_count() & PREEMPT_ACTIVE)) {
 		if (unlikely(signal_pending_state(prev->state, prev)))
 			prev->state = TASK_RUNNING;
-		else {
-			if (sched_feat(INTERACTIVE))
-				prev->se.interactive = 0;
-			if (sched_feat(TIMER))
-				prev->se.timer = 0;
+		else
 			deactivate_task(rq, prev, DEQUEUE_SLEEP);
-		}
 		switch_count = &prev->nvcsw;
 	}
 
@@ -4996,9 +4950,9 @@ void __sched io_schedule(void)
 
 	delayacct_blkio_start();
 	atomic_inc(&rq->nr_iowait);
-	current->sched_in_iowait = 1;
+	current->in_iowait = 1;
 	schedule();
-	current->sched_in_iowait = 0;
+	current->in_iowait = 0;
 	atomic_dec(&rq->nr_iowait);
 	delayacct_blkio_end();
 }
@@ -5011,9 +4965,9 @@ long __sched io_schedule_timeout(long timeout)
 
 	delayacct_blkio_start();
 	atomic_inc(&rq->nr_iowait);
-	current->sched_in_iowait = 1;
+	current->in_iowait = 1;
 	ret = schedule_timeout(timeout);
-	current->sched_in_iowait = 0;
+	current->in_iowait = 0;
 	atomic_dec(&rq->nr_iowait);
 	delayacct_blkio_end();
 	return ret;
@@ -5204,7 +5158,19 @@ void __cpuinit init_idle(struct task_struct *idle, int cpu)
 	idle->se.exec_start = sched_clock();
 
 	cpumask_copy(&idle->cpus_allowed, cpumask_of(cpu));
+	/*
+	 * We're having a chicken and egg problem, even though we are
+	 * holding rq->lock, the cpu isn't yet set to this cpu so the
+	 * lockdep check in task_group() will fail.
+	 *
+	 * Similar case to sched_fork(). / Alternatively we could
+	 * use task_rq_lock() here and obtain the other rq->lock.
+	 *
+	 * Silence PROVE_RCU
+	 */
+	rcu_read_lock();
 	__set_task_cpu(idle, cpu);
+	rcu_read_unlock();
 
 	rq->curr = rq->idle = idle;
 #if defined(CONFIG_SMP) && defined(__ARCH_WANT_UNLOCKED_CTXSW)
@@ -8138,16 +8104,11 @@ void sched_move_task(struct task_struct *tsk)
 		tsk->sched_class->put_prev_task(rq, tsk);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
-	if (tsk->sched_class->prep_move_group)
-		tsk->sched_class->prep_move_group(tsk, on_rq);
+	if (tsk->sched_class->task_move_group)
+		tsk->sched_class->task_move_group(tsk, on_rq);
+	else
 #endif
-
-	set_task_rq(tsk, task_cpu(tsk));
-
-#ifdef CONFIG_FAIR_GROUP_SCHED
-	if (tsk->sched_class->moved_group)
-		tsk->sched_class->moved_group(tsk, on_rq);
-#endif
+		set_task_rq(tsk, task_cpu(tsk));
 
 	if (unlikely(running))
 		tsk->sched_class->set_curr_task(rq);

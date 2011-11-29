@@ -29,6 +29,7 @@ obj-$(CONFIG_EP93XX_PWM)	+= ep93xx_pwm.o
 obj-$(CONFIG_DS1682)		+= ds1682.o
 obj-$(CONFIG_TI_DAC7512)	+= ti_dac7512.o
 obj-$(CONFIG_UID_STAT)		+= uid_stat.o
+obj-$(CONFIG_IFACE_STAT)	+= iface_stat.o
 obj-$(CONFIG_C2PORT)		+= c2port/
 obj-$(CONFIG_IWMC3200TOP)      += iwmc3200top/
 obj-y				+= eeprom/
@@ -37,7 +38,13 @@ obj-$(CONFIG_VMWARE_BALLOON)	+= vmware_balloon.o
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
 obj-$(CONFIG_APANIC)		+= apanic.o
 obj-$(CONFIG_SENSORS_AK8975)	+= akm8975.o
-obj-$(CONFIG_SENSORS_AKM8973)	+= akm8973.o
+ifeq ($(CONFIG_MICROP_COMMON),y)
+  obj-$(CONFIG_SENSORS_AKM8973)	+= akm8973_htc.o
+else
+  obj-$(CONFIG_SENSORS_AKM8973) += akm8973.o
+endif
 obj-$(CONFIG_SENSORS_AKM8976)	+= akm8976.o
 obj-$(CONFIG_VP_A1026)		+= a1026.o
+obj-$(CONFIG_SENSORS_BMA150_SPI)+= bma150_spi.o
 obj-$(CONFIG_MSM_720P_CORE)	+= video_core/720p/
+

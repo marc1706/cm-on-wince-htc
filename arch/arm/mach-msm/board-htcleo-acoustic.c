@@ -52,6 +52,7 @@ void acoustic_register_ops(struct qsd_acoustic_ops *ops)
 	the_ops = ops;
 }
 
+#if 0
 int turn_mic_bias_on(int on)
 {
 	D("%s called %d\n", __func__, on);
@@ -60,6 +61,7 @@ int turn_mic_bias_on(int on)
 	return 0;
 }
 EXPORT_SYMBOL(turn_mic_bias_on);
+#endif
 
 int force_headset_speaker_on(int enable)
 {

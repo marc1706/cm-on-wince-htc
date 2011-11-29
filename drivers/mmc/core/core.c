@@ -439,17 +439,6 @@ static int mmc_host_do_disable(struct mmc_host *host, int lazy)
 int mmc_host_disable(struct mmc_host *host)
 {
 	int err;
-	unsigned long flags;
-
-	spin_lock_irqsave(&host->lock, flags);
-
-	if (host->rescan_disable) {
-		spin_unlock_irqrestore(&host->lock, flags);
-		return;
-	}
-
-	spin_unlock_irqrestore(&host->lock, flags);
-
 
 	if (!(host->caps & MMC_CAP_DISABLE))
 		return 0;
@@ -1099,7 +1088,18 @@ void mmc_rescan(struct work_struct *work)
 		container_of(work, struct mmc_host, detect.work);
 	u32 ocr;
 	int err;
+	unsigned long flags;
 	int extend_wakelock = 0;
+
+	spin_lock_irqsave(&host->lock, flags);
+
+	if (host->rescan_disable) {
+		spin_unlock_irqrestore(&host->lock, flags);
+		return;
+	}
+
+	spin_unlock_irqrestore(&host->lock, flags);
+
 
 	mmc_bus_get(host);
 
@@ -1206,7 +1206,7 @@ void mmc_stop_host(struct mmc_host *host)
 
 	if (host->caps & MMC_CAP_DISABLE)
 		cancel_delayed_work(&host->disable);
-	cancel_delayed_work(&host->detect);
+	cancel_delayed_work_sync(&host->detect);
 	mmc_flush_scheduled_work();
 
 	/* clear pm flags now and let card drivers set them as needed */
@@ -1310,7 +1310,7 @@ EXPORT_SYMBOL(mmc_card_can_sleep);
  *	mmc_suspend_host - suspend a host
  *	@host: mmc host
  */
-int mmc_suspend_host(struct mmc_host *host)
+int mmc_suspend_host(struct mmc_host *host, pm_message_t state)
 {
 	int err = 0;
 
@@ -1326,10 +1326,22 @@ int mmc_suspend_host(struct mmc_host *host)
 	if (host->bus_ops && !host->bus_dead) {
 		if (host->bus_ops->suspend)
 			err = host->bus_ops->suspend(host);
+		if (err == -ENOSYS || !host->bus_ops->resume) {
+			/*
+			 * We simply "remove" the card in this case.
+			 * It will be redetected on resume.
+			 */
+			if (host->bus_ops->remove)
+				host->bus_ops->remove(host);
+			mmc_claim_host(host);
+			mmc_detach_bus(host);
+			mmc_release_host(host);
+			err = 0;
+		}
 	}
 	mmc_bus_put(host);
 
-	if (!err && !(host->pm_flags & MMC_PM_KEEP_POWER))
+	if (!err)
 		mmc_power_off(host);
 
 	return err;

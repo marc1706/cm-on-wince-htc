@@ -25,6 +25,7 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/usb/android_composite.h>
+#include <linux/usb/f_accessory.h>
 
 #include <linux/android_pmem.h>
 #include <linux/synaptics_i2c_rmi.h>
@@ -39,7 +40,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <asm/setup.h>
 
 #include <mach/board.h>
 #include <mach/hardware.h>
@@ -51,6 +51,7 @@
 #include <mach/bcm_bt_lpm.h>
 #include <mach/msm_smd.h>
 #include <mach/msm_flashlight.h>
+#include <mach/perflock.h>
 
 #include "board-mahimahi.h"
 #include "devices.h"
@@ -67,8 +68,6 @@ extern void msm_init_pmic_vibrator(void);
 extern void __init mahimahi_audio_init(void);
 
 extern int microp_headset_has_mic(void);
-
-static void config_gpio_table(uint32_t *table, int len);
 
 static int mahimahi_phy_init_seq[] = {
 	0x0C, 0x31,
@@ -142,6 +141,11 @@ static char *usb_functions_rndis_adb[] = {
 	"adb",
 };
 
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+static char *usb_functions_accessory[] = { "accessory" };
+static char *usb_functions_accessory_adb[] = { "accessory", "adb" };
+#endif
+
 #ifdef CONFIG_USB_ANDROID_DIAG
 static char *usb_functions_adb_diag[] = {
 	"usb_mass_storage",
@@ -153,6 +157,9 @@ static char *usb_functions_adb_diag[] = {
 static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	"rndis",
+#endif
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+	"accessory",
 #endif
 	"usb_mass_storage",
 	"adb",
@@ -185,6 +192,20 @@ static struct android_usb_product usb_products[] = {
 		.num_functions	= ARRAY_SIZE(usb_functions_rndis_adb),
 		.functions	= usb_functions_rndis_adb,
 	},
+#ifdef CONFIG_USB_ANDROID_ACCESSORY
+	{
+		.vendor_id	= USB_ACCESSORY_VENDOR_ID,
+		.product_id	= USB_ACCESSORY_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_accessory),
+		.functions	= usb_functions_accessory,
+	},
+	{
+		.vendor_id	= USB_ACCESSORY_VENDOR_ID,
+		.product_id	= USB_ACCESSORY_ADB_PRODUCT_ID,
+		.num_functions	= ARRAY_SIZE(usb_functions_accessory_adb),
+		.functions	= usb_functions_accessory_adb,
+	},
+#endif
 #ifdef CONFIG_USB_ANDROID_DIAG
 	{
 		.product_id	= 0x4e17,
@@ -438,7 +459,11 @@ static struct regulator_init_data tps65023_data[5] = {
 		.constraints = {
 			.name = "dcdc1", /* VREG_MSMC2_1V29 */
 			.min_uV = 975000,
+#ifdef CONFIG_JESUS_PHONE
+			.max_uV = 1350000,
+#else
 			.max_uV = 1275000,
+#endif
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
 		},
 		.consumer_supplies = tps65023_dcdc1_supplies,
@@ -543,8 +568,6 @@ static struct i2c_board_info rev_CX_i2c_devices[] = {
 		I2C_BOARD_INFO("smb329", 0x6E >> 1),
 	},
 };
-
-static void config_gpio_table(uint32_t *table, int len);
 
 static uint32_t camera_off_gpio_table[] = {
 	/* CAMERA */
@@ -687,7 +710,7 @@ static uint32_t flashlight_gpio_table_rev_CX[] = {
 };
 
 
-static int config_mahimahi_flashlight_gpios(void)
+static void config_mahimahi_flashlight_gpios(void)
 {
 	if (is_cdma_version(system_rev)) {
 		config_gpio_table(flashlight_gpio_table_rev_CX,
@@ -696,7 +719,6 @@ static int config_mahimahi_flashlight_gpios(void)
 		config_gpio_table(flashlight_gpio_table,
 			ARRAY_SIZE(flashlight_gpio_table));
 	}
-	return 0;
 }
 
 static struct flashlight_platform_data mahimahi_flashlight_data = {
@@ -942,37 +964,6 @@ static int __init parse_tag_bdaddr(const struct tag *tag)
 
 __tagtable(ATAG_BDADDR, parse_tag_bdaddr);
 
-static int __init board_serialno_setup(char *serialno)
-{
-#ifdef CONFIG_USB_ANDROID_RNDIS
-	int i;
-	char *src = serialno;
-
-	/* create a fake MAC address from our serial number.
-	 * first byte is 0x02 to signify locally administered.
-	 */
-	rndis_pdata.ethaddr[0] = 0x02;
-	for (i = 0; *src; i++) {
-		/* XOR the USB serial across the remaining bytes */
-		rndis_pdata.ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
-	}
-#endif
-
-	android_usb_pdata.serial_number = serialno;
-	return 1;
-}
-__setup("androidboot.serialno=", board_serialno_setup);
-
-static void config_gpio_table(uint32_t *table, int len)
-{
-	int n;
-	unsigned id;
-	for(n = 0; n < len; n++) {
-		id = table[n];
-		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
-	}
-}
-
 static struct msm_acpu_clock_platform_data mahimahi_clock_data = {
 	.acpu_switch_time_us	= 20,
 	.max_speed_delta_khz	= 256000,
@@ -989,6 +980,17 @@ static struct msm_acpu_clock_platform_data mahimahi_cdma_clock_data = {
 	.power_collapse_khz	= 235930,
 	.wait_for_irq_khz	= 235930,
 	.mpll_khz		= 235930
+};
+
+static unsigned mahimahi_perf_acpu_table[] = {
+  245000000,
+  576000000,
+  998400000,
+};
+
+static struct perflock_platform_data mahimahi_perflock_data = {
+  .perf_acpu_table = mahimahi_perf_acpu_table,
+  .table_size = ARRAY_SIZE(mahimahi_perf_acpu_table),
 };
 
 static ssize_t mahimahi_virtual_keys_show(struct kobject *kobj,
@@ -1050,6 +1052,8 @@ static void __init mahimahi_init(void)
 
 	printk("mahimahi_init() revision=%d\n", system_rev);
 
+  android_usb_pdata.serial_number = board_serialno();
+
 	if (is_cdma_version(system_rev))
 		smd_set_channel_list(smd_cdma_default_channels,
 					ARRAY_SIZE(smd_cdma_default_channels));
@@ -1060,6 +1064,8 @@ static void __init mahimahi_init(void)
 		msm_acpu_clock_init(&mahimahi_cdma_clock_data);
 	else
 		msm_acpu_clock_init(&mahimahi_clock_data);
+
+  perflock_init(&mahimahi_perflock_data);
 
 	msm_serial_debug_init(MSM_UART1_PHYS, INT_UART1,
 			      &msm_device_uart1.dev, 1, MSM_GPIO_TO_INT(139));

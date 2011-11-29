@@ -544,7 +544,7 @@ static void h2w_config_cpld(int route)
 
 static void h2w_init_cpld(void)
 {
-	h2w_config_cpld(H2W_GPIO);
+	h2w_config_cpld(H2W_UART3);
 }
 
 static int h2w_dat_value;
@@ -1111,16 +1111,6 @@ static uint32_t camera_on_gpio_12pins_table[] = {
 	PCOM_GPIO_CFG(15, 1, GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_16MA), /* MCLK */
 };
 
-static void config_gpio_table(uint32_t *table, int len)
-{
-	int n;
-	unsigned id;
-	for (n = 0; n < len; n++) {
-		id = table[n];
-		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
-	}
-}
-
 void config_sapphire_camera_on_gpios(void)
 {
 	/*Add for judage it's 10 pins or 12 pins platform ----->*/
@@ -1158,11 +1148,7 @@ static struct msm_acpu_clock_platform_data sapphire_clock_data = {
 	.max_speed_delta_khz = 256000,
 	.vdd_switch_time_us = 62,
 	.power_collapse_khz = 19200000,
-#if defined(CONFIG_TURBO_MODE)
-	.wait_for_irq_khz = 176000000,
-#else
 	.wait_for_irq_khz = 128000000,
-#endif
 };
 
 #ifdef CONFIG_SERIAL_MSM_HS

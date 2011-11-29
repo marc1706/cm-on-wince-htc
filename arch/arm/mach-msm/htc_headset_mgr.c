@@ -42,7 +42,7 @@
 
 #include <mach/board.h>
 #include <mach/vreg.h>
-#include <mach/board-htcleo-microp.h>
+#include <mach/atmega_microp.h>
 
 #include <mach/htc_headset_mgr.h>
 
@@ -252,9 +252,8 @@ static void insert_11pin_35mm(int *state)
 	SYS_MSG("Insert USB 3.5mm headset");
 	set_35mm_hw_state(1);
 
-	if (hs_mgr_notifier.mic_status) {
+	if (hs_mgr_notifier.mic_status)
 		mic = hs_mgr_notifier.mic_status();
-	}
 
 	if (mic == HEADSET_NO_MIC) {
 		/* without microphone */

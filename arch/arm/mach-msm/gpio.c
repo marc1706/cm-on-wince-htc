@@ -674,7 +674,7 @@ int gpio_configure(unsigned int gpio, unsigned long flags)
 	return 0;
 }
 EXPORT_SYMBOL(gpio_configure);
-
+#if 0
 void config_gpio_table(uint32_t *table, int len)
 {
 	int n;
@@ -685,6 +685,7 @@ void config_gpio_table(uint32_t *table, int len)
 	}
 }
 EXPORT_SYMBOL(config_gpio_table);
+#endif
 
 int gpio_tlmm_config(unsigned config, unsigned disable)
 {

@@ -37,7 +37,6 @@
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <asm/setup.h>
 #include <mach/board.h>
 #include <mach/hardware.h>
 #include <mach/msm_hsusb.h>
@@ -48,6 +47,7 @@
 #include <mach/bcm_bt_lpm.h>
 #include <mach/msm_smd.h>
 #include <mach/msm_flashlight.h>
+#include <mach/perflock.h>
 #include <mach/vreg.h>
 #include <mach/board-bravo-microp-common.h>
 
@@ -71,14 +71,12 @@ extern void __init bravo_audio_init(void);
 
 extern int microp_headset_has_mic(void);
 
-static void config_gpio_table(uint32_t *table, int len);
-
 static int bravo_phy_init_seq[] = {
 	0x0C, 0x31,
 	0x31, 0x32,
 	0x1D, 0x0D,
 	0x1D, 0x10,
-	-1 
+	-1
 };
 
 static void bravo_usb_phy_reset(void)
@@ -416,7 +414,11 @@ static struct regulator_init_data tps65023_data[5] = {
 		.constraints = {
 			.name = "dcdc1", /* VREG_MSMC2_1V29 */
 			.min_uV = 975000,
+#ifdef CONFIG_JESUS_PHONE
+			.max_uV = 1350000,
+#else
 			.max_uV = 1275000,
+#endif
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
 		},
 		.consumer_supplies = tps65023_dcdc1_supplies,
@@ -537,8 +539,6 @@ static struct i2c_board_info rev_CX_i2c_devices[] = {
 		I2C_BOARD_INFO("smb329", 0x6E >> 1),
 	},
 };
-
-static void config_gpio_table(uint32_t *table, int len);
 
 static uint32_t camera_off_gpio_table[] = {
 	/* CAMERA */
@@ -707,7 +707,7 @@ static uint32_t flashlight_gpio_table_rev_CX[] = {
 						GPIO_NO_PULL, GPIO_2MA),
 };
 
-static int config_bravo_flashlight_gpios(void)
+static void config_bravo_flashlight_gpios(void)
 {
 	if (is_cdma_version(system_rev)) {
 		config_gpio_table(flashlight_gpio_table_rev_CX,
@@ -716,7 +716,6 @@ static int config_bravo_flashlight_gpios(void)
 		config_gpio_table(flashlight_gpio_table,
 				ARRAY_SIZE(flashlight_gpio_table));
 	}
-	return 0;
 }
 
 static struct flashlight_platform_data bravo_flashlight_data = {
@@ -857,7 +856,7 @@ static void curcial_oj_shutdown(int enable)
 	cmd[2] = 0x20;
 	// microp firmware(v04) non-shutdown by default
 	microp_i2c_write(0x90, cmd, 3);
-	pr_err("%s\n", __func__);	
+	pr_err("%s\n", __func__);
 }
 
 #define CURCIAL_OJ_POWER		150
@@ -1085,37 +1084,6 @@ static int __init parse_tag_bdaddr(const struct tag *tag)
 
 __tagtable(ATAG_BDADDR, parse_tag_bdaddr);
 
-static int __init board_serialno_setup(char *serialno)
-{
-#ifdef CONFIG_USB_ANDROID_RNDIS
-	int i;
-	char *src = serialno;
-
-	/* create a fake MAC address from our serial number.
-	 * first byte is 0x02 to signify locally administered.
-	 */
-	rndis_pdata.ethaddr[0] = 0x02;
-	for (i = 0; *src; i++) {
-		/* XOR the USB serial across the remaining bytes */
-		rndis_pdata.ethaddr[i % (ETH_ALEN - 1) + 1] ^= *src++;
-	}
-#endif
-
-	android_usb_pdata.serial_number = serialno;
-	return 1;
-}
-__setup("androidboot.serialno=", board_serialno_setup);
-
-static void config_gpio_table(uint32_t *table, int len)
-{
-	int n;
-	unsigned id;
-	for(n = 0; n < len; n++) {
-		id = table[n];
-		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
-	}
-}
-
 static struct msm_acpu_clock_platform_data bravo_clock_data = {
 	.acpu_switch_time_us	= 20,
 	.max_speed_delta_khz	= 256000,
@@ -1134,10 +1102,21 @@ static struct msm_acpu_clock_platform_data bravo_cdma_clock_data = {
 	.mpll_khz		= 235930
 };
 
+static unsigned bravo_perf_acpu_table[] = {
+	245000000,
+	576000000,
+	998400000,
+};
+
+static struct perflock_platform_data bravo_perflock_data = {
+	.perf_acpu_table = bravo_perf_acpu_table,
+	.table_size = ARRAY_SIZE(bravo_perf_acpu_table),
+};
+
 static void bravo_reset(void)
 {
 	gpio_set_value(BRAVO_GPIO_PS_HOLD, 0);
-}
+};
 
 int bravo_init_mmc(int sysrev, unsigned debug_uart);
 
@@ -1153,6 +1132,8 @@ static void __init bravo_init(void)
 
 	printk("bravo_init() revision=%d\n", system_rev);
 
+	android_usb_pdata.serial_number = board_serialno();
+
 	if (is_cdma_version(system_rev))
 		smd_set_channel_list(smd_cdma_default_channels,
 				ARRAY_SIZE(smd_cdma_default_channels));
@@ -1163,6 +1144,8 @@ static void __init bravo_init(void)
 		msm_acpu_clock_init(&bravo_cdma_clock_data);
 	else
 		msm_acpu_clock_init(&bravo_clock_data);
+
+	perflock_init(&bravo_perflock_data);
 
 	msm_serial_debug_init(MSM_UART1_PHYS, INT_UART1,
 			      &msm_device_uart1.dev, 1, MSM_GPIO_TO_INT(139));

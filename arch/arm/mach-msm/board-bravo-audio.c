@@ -35,28 +35,28 @@ static struct mutex bt_sco_lock;
 
 static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
 	[Q6_HW_HANDSET] = {
-		.min_gain = -1500,
-		.max_gain = 1100,
+		.min_gain = -1600,
+		.max_gain = 400,
 	},
 	[Q6_HW_HEADSET] = {
-		.min_gain = -1500,
-		.max_gain = 1100,
+		.min_gain = -1600,
+		.max_gain = 400,
 	},
 	[Q6_HW_SPEAKER] = {
-		.min_gain = -2000,
-		.max_gain = 800,
+		.min_gain = -1100,
+		.max_gain = 400,
 	},
 	[Q6_HW_TTY] = {
-		.min_gain = -1500,
-		.max_gain = 1100,
+		.min_gain = -1600,
+		.max_gain = 400,
 	},
 	[Q6_HW_BT_SCO] = {
-		.min_gain = -2000,
-		.max_gain = 800,
+		.min_gain = -1600,
+		.max_gain = 400,
 	},
 	[Q6_HW_BT_A2DP] = {
-		.min_gain = -2000,
-		.max_gain = 800,
+		.min_gain = -1600,
+		.max_gain = 400,
 	},
 };
 
@@ -124,16 +124,6 @@ void bravo_receiver_enable(int en)
 
 			pmic_set_spkr_configuration(&scm);
 		}
-	}
-}
-
-static void config_gpio_table(uint32_t *table, int len)
-{
-	int n;
-	unsigned id;
-	for (n = 0; n < len; n++) {
-		id = table[n];
-		msm_proc_comm(PCOM_RPC_GPIO_TLMM_CONFIG_EX, &id, 0);
 	}
 }
 

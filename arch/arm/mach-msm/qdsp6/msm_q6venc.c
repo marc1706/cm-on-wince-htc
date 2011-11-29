@@ -62,10 +62,10 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/sched.h>
-#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/wakelock.h>
+#include <linux/slab.h>
 #include <linux/android_pmem.h>
 #include <linux/msm_q6venc.h>
 #include "../dal.h"

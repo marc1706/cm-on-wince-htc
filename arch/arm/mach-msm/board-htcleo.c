@@ -46,6 +46,7 @@
 #include <mach/system.h>
 #include <mach/msm_iomap.h>
 #include <mach/msm_flashlight.h>
+#include <mach/perflock.h>
 #include <mach/msm_serial_hs.h>
 #include <mach/msm_hsusb.h>
 #include <mach/bcm_bt_lpm.h>
@@ -256,8 +257,6 @@ static struct i2c_board_info base_i2c_devices[] =
 // USB 
 ///////////////////////////////////////////////////////////////////////
 
-extern void notify_usb_connected(int);
-
 static int htcleo_phy_init_seq[] = {0x0C, 0x31,0x0C, 0x31, 0x30, 0x32, 0x1D, 0x0D, 0x1D, 0x10, -1};
 
 static void htcleo_usb_phy_reset(void)
@@ -304,7 +303,7 @@ static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= htcleo_phy_init_seq,
 	.phy_reset		= htcleo_usb_phy_reset,
 	.hw_reset		= htcleo_usb_hw_reset,
-	.usb_connected		= notify_usb_connected,
+	.accessory_detect = 0, /* detect by ID pin gpio */
 };
 
 static char *usb_functions_ums[] = {
@@ -957,6 +956,17 @@ static struct msm_acpu_clock_platform_data htcleo_clock_data = {
 //	.wait_for_irq_khz	= 19200,   // TCXO
 };
 
+static unsigned htcleo_perf_acpu_table[] = {
+	245000000,
+	576000000,
+	998400000,
+};
+
+static struct perflock_platform_data htcleo_perflock_data = {
+	.perf_acpu_table = htcleo_perf_acpu_table,
+	.table_size = ARRAY_SIZE(htcleo_perf_acpu_table),
+};
+
 ///////////////////////////////////////////////////////////////////////
 // Reset
 ///////////////////////////////////////////////////////////////////////
@@ -1008,6 +1018,8 @@ static void __init htcleo_init(void)
 	do_sdc1_reset();
 
 	msm_acpu_clock_init(&htcleo_clock_data);
+	
+	perflock_init(&htcleo_perflock_data);
 	
 	init_dex_comm();
 

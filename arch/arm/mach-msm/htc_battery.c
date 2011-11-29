@@ -43,12 +43,14 @@
 #endif
 #ifdef CONFIG_BATTERY_DS2784
 #include <linux/ds2784_battery.h>
-#elif defined(CONFIG_BATTERY_DS2746)
+#elif CONFIG_BATTERY_DS2746
 #include <linux/ds2746_battery.h>
 #endif
 
+#include <linux/smb329.h>
+
 static struct wake_lock vbus_wake_lock;
-extern void notify_usb_connected(int);
+
 enum {
 	HTC_BATT_DEBUG_M2A_RPC = 1U << 0,
 	HTC_BATT_DEBUG_A2M_RPC = 1U << 1,
@@ -189,6 +191,12 @@ static struct power_supply htc_power_supplies[] = {
 };
 
 static int update_batt_info(void);
+static void usb_status_notifier_func(int online);
+//static int g_usb_online;
+static struct t_usb_status_notifier usb_status_notifier = {
+	.name = "htc_battery",
+	.func = usb_status_notifier_func,
+};
 
 /* Move cable detection/notification to standard PMIC RPC. */
 static BLOCKING_NOTIFIER_HEAD(cable_status_notifier_list);
@@ -218,9 +226,12 @@ void notify_cable_status(int status)
 {
 	pr_info("notify_cable_status(%d)\n", status);
 	msm_hsusb_set_vbus_state(status);
+#if 0
+	// this will cause issues so don't enabled it
 	power_supply_changed(&htc_power_supplies[CHARGER_USB]);
 	power_supply_changed(&htc_power_supplies[CHARGER_AC]);
 	power_supply_changed(&htc_power_supplies[CHARGER_BATTERY]);
+#endif
 }
 
 // called from DEX intrrupt
@@ -258,6 +269,40 @@ static int htc_is_cable_in(void)
 	return (htc_batt_info.rep.charging_source != CHARGER_BATTERY) ? 1 : 0;
 }
 
+/**
+ * htc_power_policy - check if it obeys our policy
+ * return 0 for no errors, to indicate it follows policy.
+ * non zero otherwise.
+ **/
+static int __htc_power_policy(void)
+{
+	if (!zcharge_enabled)
+		return 0;
+
+	if (htc_is_cable_in())
+		return 1;
+
+	return 0;
+}
+
+/*
+ * Jay, 7/1/09'
+ */
+static int htc_power_policy(struct notifier_block *nfb,
+		unsigned long action, void *ignored)
+{
+	int rc;
+	switch (action) {
+	case NOTIFY_POWER:
+		pr_info("%s: enter.\n", __func__);
+		rc = __htc_power_policy();
+		if (rc)
+			return NOTIFY_STOP;
+		else
+			return NOTIFY_OK;
+	}
+	return NOTIFY_DONE; /* we did not care other action here */
+}
 
 unsigned int batt_get_status(enum power_supply_property psp)
 {
@@ -432,6 +477,9 @@ static void update_wake_lock(int status)
 {
 	if (status == CHARGER_USB) {
 		wake_lock(&vbus_wake_lock);
+	} else if (__htc_power_policy()) {
+		/* Lock suspend for DOPOD charging animation */
+		wake_lock(&vbus_wake_lock);
 	} else {
 		/* give userspace some time to see the uevent and update
 		 * LED state or whatnot...
@@ -535,6 +583,9 @@ static int htc_cable_status_update(int status)
 		/* Lock suspend only when USB in for ADB or other USB functions. */
 		if (htc_batt_info.rep.charging_source == CHARGER_USB) {
 			wake_lock(&vbus_wake_lock);
+		} else if (__htc_power_policy()) {
+			/* Lock suspend for DOPOD charging animation */
+			wake_lock(&vbus_wake_lock);
 		} else {
 			if (htc_batt_info.rep.charging_source == CHARGER_AC
 				&& last_source == CHARGER_USB)
@@ -597,7 +648,7 @@ EXPORT_SYMBOL(htc_get_usb_accessory_adc_level);
 /* A9 reports USB charging when helf AC cable in and China AC charger. */
 /* notify userspace USB charging first,
 and then usb driver will notify AC while D+/D- Line short. */
-void notify_usb_connected(int online)
+static void usb_status_notifier_func(int online)
 {
 #if 1
 	pr_info("batt:online=%d",online);
@@ -1085,8 +1136,9 @@ static struct device_attribute htc_battery_attrs[] = {
 #ifdef CONFIG_HTC_BATTCHG_SMEM
 	__ATTR(smem_raw, S_IRUGO, htc_battery_show_smem, NULL),
 	__ATTR(smem_text, S_IRUGO, htc_battery_show_smem, NULL),
-#endif
+#else
 	__ATTR(batt_attr_text, S_IRUGO, htc_battery_show_batt_attr, NULL),
+#endif
 };
 
 enum {
@@ -1208,6 +1260,7 @@ static ssize_t htc_battery_set_full_level(struct device *dev,
 {
 	int rc = 0;
 	unsigned long percent = 100;
+	unsigned long param = 0;
 
 	percent = simple_strtoul(buf, NULL, 10);
 
@@ -1227,8 +1280,9 @@ static ssize_t htc_battery_set_full_level(struct device *dev,
 	mutex_lock(&htc_batt_info.lock);
 	htc_full_level_flag = 1;
 	htc_batt_info.rep.full_level = percent;
+	param = percent;
 	blocking_notifier_call_chain(&cable_status_notifier_list,
-		0xff, (void *) &htc_batt_info.rep.full_level);
+		0xff, (void *) &param);
 	mutex_unlock(&htc_batt_info.lock);
 			}
 	rc = 0;
@@ -1269,7 +1323,7 @@ htc_attrs_failed:
 		device_remove_file(dev, &htc_battery_attrs[i]);
 htc_delta_attrs_failed:
 	while (j--)
-		device_remove_file(dev, &htc_set_delta_attrs[i]);
+		device_remove_file(dev, &htc_set_delta_attrs[j]);
 succeed:
 	return rc;
 }
@@ -1300,7 +1354,7 @@ static int update_batt_info(void)
 			ret = -1;
 		}
 		break;
-#elif defined(CONFIG_BATTERY_DS2746)
+#elif CONFIG_BATTERY_DS2746
 	case GUAGE_DS2746:
 		if (ds2746_get_battery_info(&htc_batt_info.rep)) {
 			BATT_ERR("%s: ds2746 read failed!!!", __func__);
@@ -1629,6 +1683,7 @@ static int ds2784_notifier_func(struct notifier_block *nfb,
 		unsigned long action, void *param)
 {
 	u8 arg = 0;
+
 	if (param)
 		arg = *(u8 *)param;
 
@@ -1687,7 +1742,7 @@ static int htc_battery_probe(struct platform_device *pdev)
 #ifdef CONFIG_BATTERY_DS2784
 	if (pdata->guage_driver == GUAGE_DS2784)
 		ds2784_register_notifier(&ds2784_notifier);
-#elif defined(CONFIG_BATTERY_DS2746)
+#elif CONFIG_BATTERY_DS2746
 	if (pdata->guage_driver == GUAGE_DS2746)
 		ds2746_register_notifier(&ds2784_notifier);
 #endif
@@ -1735,6 +1790,10 @@ static struct platform_driver htc_battery_driver = {
 	},
 };
 
+static struct notifier_block batt_notify = {
+	.notifier_call = htc_power_policy,
+};
+
 static BLOCKING_NOTIFIER_HEAD(battery_notifier_list);
 int batt_register_client(struct notifier_block *nb)
 {
@@ -1756,9 +1815,12 @@ static int __init htc_battery_init(void)
 	wake_lock_init(&vbus_wake_lock, WAKE_LOCK_SUSPEND, "vbus_present");
 	mutex_init(&htc_batt_info.lock);
 	mutex_init(&htc_batt_info.rpc_lock);
+	usb_register_notifier(&usb_status_notifier);
 	platform_driver_register(&htc_battery_driver);
 	platform_driver_register(&htc_battery_core_driver);
+	batt_register_client(&batt_notify);
 	/* Jay, The msm_fb need to consult htc_battery for power policy */
+	display_notifier(htc_power_policy, NOTIFY_POWER);
 	return 0;
 }
 

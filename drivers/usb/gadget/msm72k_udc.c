@@ -54,6 +54,7 @@ static const char driver_name[] = "msm72k_udc";
 
 #define SETUP_BUF_SIZE      4096
 
+typedef void (*completion_func)(struct usb_ep *ep, struct usb_request *req);
 
 static const char *const ep_name[] = {
 	"ep0out", "ep1out", "ep2out", "ep3out",
@@ -73,9 +74,7 @@ struct msm_request {
 	struct usb_request req;
 
 	/* saved copy of req.complete */
-	void	(*gadget_complete)(struct usb_ep *ep,
-					struct usb_request *req);
-
+	completion_func gadget_complete;
 
 	struct usb_info *ui;
 	struct msm_request *next;
@@ -508,7 +507,7 @@ static void ep0_complete(struct usb_ep *ep, struct usb_request *req)
 	struct usb_info *ui = ept->ui;
 
 	req->complete = r->gadget_complete;
-	r->gadget_complete = 0;
+	r->gadget_complete = NULL;
 	if	(req->complete)
 		req->complete(&ui->ep0in.ep, req);
 }
@@ -516,6 +515,13 @@ static void ep0_complete(struct usb_ep *ep, struct usb_request *req)
 static void ep0_queue_ack_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct msm_endpoint *ept = to_msm_endpoint(ep);
+	struct msm_request *r = to_msm_request(req);
+	completion_func gadget_complete = r->gadget_complete;
+
+	if (gadget_complete) {
+		r->gadget_complete = NULL;
+		gadget_complete(ep, req);
+	}
 
 	/* queue up the receive of the ACK response from the host */
 	if (req->status == 0) {
@@ -587,7 +593,7 @@ static void ep0_setup_send(struct usb_info *ui, unsigned length)
 
 	req->length = length;
 	req->complete = ep0_queue_ack_complete;
-	r->gadget_complete = 0;
+	r->gadget_complete = NULL;
 	usb_ept_queue_xfer(ept, req);
 }
 
@@ -1253,7 +1259,8 @@ static void usb_do_work(struct work_struct *w)
 					printk(KERN_INFO "usb: notify offline\n");
 					ui->driver->disconnect(&ui->gadget);
 				}
-#ifdef CONFIG_ARCH_MSM_SCORPION
+
+#ifndef CONFIG_ARCH_MSM7X00A
 				usb_phy_reset(ui);
 #endif
 
@@ -1899,10 +1906,6 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
 
 	device_remove_file(&dev->gadget.dev, &dev_attr_wakeup);
 	driver->unbind(&dev->gadget);
-	if (dev->irq) {
-		free_irq(dev->irq, dev);
-		dev->irq = 0;
-	}
 	dev->gadget.dev.driver = NULL;
 	dev->driver = NULL;
 

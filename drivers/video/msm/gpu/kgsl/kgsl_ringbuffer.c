@@ -282,13 +282,13 @@ static int kgsl_ringbuffer_load_pm4_ucode(struct kgsl_device *device)
 	if (status != 0) {
 		KGSL_DRV_ERR("request_firmware failed for %s with error %d\n",
 				YAMATO_PM4_FW, status);
-		goto error;
+		goto done;
 	}
 	/*this firmware must come in 3 word chunks. plus 1 word of version*/
 	if ((fw->size % (sizeof(uint32_t)*3)) != 4) {
 		KGSL_DRV_ERR("bad firmware size %d.\n", fw->size);
 		status = -EINVAL;
-		goto error_release_fw;
+		goto done;
 	}
 	fw_ptr = (unsigned int *)fw->data;
 	fw_word_size = fw->size/sizeof(uint32_t);
@@ -299,9 +299,8 @@ static int kgsl_ringbuffer_load_pm4_ucode(struct kgsl_device *device)
 	for (i = 1; i < fw_word_size; i++)
 		kgsl_yamato_regwrite(device, REG_CP_ME_RAM_DATA, fw_ptr[i]);
 
-error_release_fw:
+done:
 	release_firmware(fw);
-error:
 	return status;
 }
 
