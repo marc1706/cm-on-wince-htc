@@ -108,8 +108,8 @@ static struct regulator_init_data tps65023_data[5] =
         .constraints =
 		{
             .name = "dcdc1", /* VREG_MSMC2_1V29 */
-            .min_uV = 1000000,
-            .max_uV = 1300000,
+            .min_uV = HTCLEO_TPS65023_MIN_UV_MV * 1000,
+            .max_uV = HTCLEO_TPS65023_MAX_UV_MV * 1000,
             .valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
         },
         .consumer_supplies = tps65023_dcdc1_supplies,
@@ -189,6 +189,27 @@ static struct akm8973_platform_data compass_platform_data =
 	.intr = HTCLEO_GPIO_COMPASS_INT_N,
 };
 
+
+///////////////////////////////////////////////////////////////////////
+// LED Driver (drivers/leds/leds-microp.c - Atmega microp driver
+///////////////////////////////////////////////////////////////////////
+
+static struct microp_led_config led_config[] = {
+        {
+                .name = "amber",
+                .type = LED_RGB,
+        },
+        {
+                .name = "green",
+                .type = LED_RGB,
+        },
+};
+
+static struct microp_led_platform_data microp_leds_data = {
+        .num_leds       = ARRAY_SIZE(led_config),
+        .led_config     = led_config,
+};
+
 ///////////////////////////////////////////////////////////////////////
 // Microp
 ///////////////////////////////////////////////////////////////////////
@@ -213,8 +234,12 @@ static struct platform_device microp_devices[] = {
 		.id = -1,
 	},
 	{
-		.name = "htcleo-leds",
+		.name = "leds-microp",
 		.id = -1,
+		.dev = {
+			.platform_data = &microp_leds_data,
+		},
+
 	},
 	{
 		.name = "htcleo-lsensor",
