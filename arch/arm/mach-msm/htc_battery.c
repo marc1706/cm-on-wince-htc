@@ -227,7 +227,7 @@ void notify_cable_status(int status)
 	pr_info("notify_cable_status(%d)\n", status);
 	msm_hsusb_set_vbus_state(status);
 #if 0
-	// this will cause issues so don't enabled it
+	// this will cause issues so don't enable it
 	power_supply_changed(&htc_power_supplies[CHARGER_USB]);
 	power_supply_changed(&htc_power_supplies[CHARGER_AC]);
 	power_supply_changed(&htc_power_supplies[CHARGER_BATTERY]);
@@ -1768,7 +1768,7 @@ static int htc_battery_probe(struct platform_device *pdev)
 #if defined(CONFIG_MACH_HTCLEO)
 	if(pdata->force_no_rpc) {
 		htc_battery_core_probe(pdev);
-		htc_cable_status_update(get_vbus_state());
+		msm_hsusb_set_vbus_state(get_vbus_state());
 	}
 #endif
  pr_info("Battery Probe done\n");

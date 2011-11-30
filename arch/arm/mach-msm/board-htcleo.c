@@ -282,6 +282,8 @@ static struct i2c_board_info base_i2c_devices[] =
 // USB 
 ///////////////////////////////////////////////////////////////////////
 
+extern void msm_hsusb_8x50_phy_reset(void);
+
 static int htcleo_phy_init_seq[] = {0x0C, 0x31,0x0C, 0x31, 0x30, 0x32, 0x1D, 0x0D, 0x1D, 0x10, -1};
 
 static void htcleo_usb_phy_reset(void)
@@ -326,8 +328,7 @@ static void htcleo_usb_hw_reset(bool enable)
 
 static struct msm_hsusb_platform_data msm_hsusb_pdata = {
 	.phy_init_seq		= htcleo_phy_init_seq,
-	.phy_reset		= htcleo_usb_phy_reset,
-	.hw_reset		= htcleo_usb_hw_reset,
+	.phy_reset		= msm_hsusb_8x50_phy_reset,
 	.accessory_detect = 0, /* detect by ID pin gpio */
 };
 
