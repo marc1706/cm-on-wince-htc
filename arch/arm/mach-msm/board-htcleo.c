@@ -284,46 +284,12 @@ static struct i2c_board_info base_i2c_devices[] =
 
 extern void msm_hsusb_8x50_phy_reset(void);
 
-static int htcleo_phy_init_seq[] = {0x0C, 0x31,0x0C, 0x31, 0x30, 0x32, 0x1D, 0x0D, 0x1D, 0x10, -1};
-
-static void htcleo_usb_phy_reset(void)
+static uint32_t usb_phy_3v3_table[] =
 {
-	u32 id;
-	int ret;
+    PCOM_GPIO_CFG(HTCLEO_GPIO_USBPHY_3V3_ENABLE, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_4MA)
+};
 
-	id = PCOM_CLKRGM_APPS_RESET_USB_PHY;
-	ret = msm_proc_comm(PCOM_CLK_REGIME_SEC_RESET_ASSERT, &id, NULL);
-	if (ret) {
-		pr_err("%s: Cannot assert (%d)\n", __func__, ret);
-		return;
-	}
-
-	msleep(1);
-
-	id = PCOM_CLKRGM_APPS_RESET_USB_PHY;
-	ret = msm_proc_comm(PCOM_CLK_REGIME_SEC_RESET_DEASSERT, &id, NULL);
-	if (ret) {
-		pr_err("%s: Cannot assert (%d)\n", __func__, ret);
-		return;
-	}
-}
-
-static void htcleo_usb_hw_reset(bool enable)
-{
-	u32 id;
-	int ret;
-	u32 func;
-
-	id = PCOM_CLKRGM_APPS_RESET_USBH;
-	if (enable)
-		func = PCOM_CLK_REGIME_SEC_RESET_ASSERT;
-	else
-		func = PCOM_CLK_REGIME_SEC_RESET_DEASSERT;
-	ret = msm_proc_comm(func, &id, NULL);
-	if (ret)
-		pr_err("%s: Cannot set reset to %d (%d)\n", __func__, enable,
-		       ret);
-}
+static int htcleo_phy_init_seq[] ={0x0C, 0x31, 0x30, 0x32, 0x1D, 0x0D, 0x1D, 0x10, -1};
 
 
 static struct msm_hsusb_platform_data msm_hsusb_pdata = {
@@ -452,6 +418,30 @@ static struct platform_device android_usb_device = {
 		.platform_data = &android_usb_pdata,
 	},
 };
+static void htcleo_add_usb_devices(void)
+{
+	android_usb_pdata.products[0].product_id =
+		android_usb_pdata.product_id;
+	android_usb_pdata.serial_number = board_serialno();
+	msm_hsusb_pdata.serial_number = board_serialno();
+	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
+	config_gpio_table(usb_phy_3v3_table, ARRAY_SIZE(usb_phy_3v3_table));
+	gpio_set_value(HTCLEO_GPIO_USBPHY_3V3_ENABLE, 1);
+	platform_device_register(&msm_device_hsusb);
+	platform_device_register(&usb_mass_storage_device);
+#ifdef CONFIG_USB_ANDROID_RNDIS
+	platform_device_register(&rndis_device);
+#endif
+	platform_device_register(&android_usb_device);
+}
+
+unsigned htcleo_get_vbus_state(void)
+{
+	if(readl(MSM_SHARED_RAM_BASE+0xef20c))
+		return 1;
+	else
+		return 0;
+}
 
 ///////////////////////////////////////////////////////////////////////
 // Flashlight
@@ -910,12 +900,6 @@ static struct platform_device *devices[] __initdata =
 	&android_pmem_mdp_device,
 	&android_pmem_adsp_device,
 	&android_pmem_venc_device,
-	&msm_device_hsusb,
-	&usb_mass_storage_device,
-#ifdef CONFIG_USB_ANDROID_RNDIS
-	&rndis_device,
-#endif
-	&android_usb_device,
 	&msm_device_i2c,
 	&ds2746_battery_pdev,
 	&htc_battery_pdev,
@@ -927,7 +911,6 @@ static struct platform_device *devices[] __initdata =
 #ifdef CONFIG_HTCLEO_BTN_BACKLIGHT_MANAGER
 	&btn_backlight_manager,
 #endif
-
 };
 ///////////////////////////////////////////////////////////////////////
 // Vibrator
@@ -1064,7 +1047,6 @@ static void __init htcleo_init(void)
 	mdelay(100);
 	htcleo_kgsl_power(true);
 	
-	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	msm_device_uart_dm1.dev.platform_data = &msm_uart_dm1_pdata;
 	msm_device_uart_dm1.name = "msm_serial_hs_bcm"; /* for bcm */
     	msm_device_uart_dm1.resource[3].end = 6;
@@ -1074,11 +1056,13 @@ static void __init htcleo_init(void)
 	htcleo_init_panel();
 
 	i2c_register_board_info(0, base_i2c_devices, ARRAY_SIZE(base_i2c_devices));
-	
+
+	htcleo_add_usb_devices();
+
 	htcleo_init_mmc(0);
 	platform_device_register(&htcleo_timed_gpios);
 	
-#if CONFIG_HTCLEO_BLINK_ON_BOOT
+#ifdef CONFIG_HTCLEO_BLINK_ON_BOOT
 	/* Blink the camera LED shortly to show that we're alive! */
 	htcleo_blink_camera_led();
 #endif
