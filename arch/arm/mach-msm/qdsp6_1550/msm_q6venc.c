@@ -42,13 +42,13 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/android_pmem.h>
 #include <linux/msm_q6venc_1550.h>
-#include <linux/dma-mapping.h> 
-#include <linux/slab.h>
-#include <asm/cacheflush.h> 
+
+#include <asm/cacheflush.h>
 
 #include "dal.h"
 
@@ -174,10 +174,10 @@ frame_found:
 	memcpy(&q6venc->done_frame.q6_frame_type, q6frame,
 	       sizeof(struct q6_frame_type));
 
-	dmac_unmap_area((void *)q6venc->rlc_bufs[i].vaddr, q6venc->rlc_buf_len, DMA_TO_DEVICE);
-	outer_inv_range(__pa((u32) (void *)q6venc->rlc_bufs[i].vaddr),
-			__pa((u32) (void *)(q6venc->rlc_bufs[i].vaddr + q6venc->rlc_buf_len))); 
-				 
+	dmac_inv_range((const void *)q6venc->rlc_bufs[i].vaddr,
+		       (const void *)(q6venc->rlc_bufs[i].vaddr +
+				      q6venc->rlc_buf_len));
+
 	wake_up_interruptible(&q6venc->encode_wq);
 
 done:
@@ -326,9 +326,9 @@ static int q6_config_encode(struct q6venc_dev *q6venc, uint32_t type,
 	// The DSP may use the rlc_bufs during initialization,
 	for (i=0; i<RLC_MAX_BUF_NUM; i++)
 	{
-		dmac_unmap_area((void *)q6venc->rlc_bufs[i].vaddr, q6venc->rlc_buf_len, DMA_TO_DEVICE);
-		outer_inv_range(__pa((u32) (void *)q6venc->rlc_bufs[i].vaddr),
-				__pa((u32) (void *)(q6venc->rlc_bufs[i].vaddr + q6venc->rlc_buf_len))); 
+		dmac_inv_range((const void *)q6venc->rlc_bufs[i].vaddr,
+			(const void *)(q6venc->rlc_bufs[i].vaddr +
+				q6venc->rlc_buf_len));
 	}
 
 	ret = dal_call_f5(q6venc->venc, type, q6_init_config,
@@ -416,11 +416,9 @@ static int q6_encode(struct q6venc_dev *q6venc, struct encode_param *enc_param)
 	* 0 the first time we call q6_encode, and alternate afterwards
 	* */
 	rlc_buf_index = q6venc->rlc_buf_index;
-
-	dmac_unmap_area((void *)q6venc->rlc_bufs[rlc_buf_index].vaddr, q6venc->rlc_buf_len, DMA_TO_DEVICE);
-	outer_inv_range(__pa((u32) (void *)q6venc->rlc_bufs[rlc_buf_index].vaddr),
-			__pa((u32) (void *)(q6venc->rlc_bufs[rlc_buf_index].vaddr + q6venc->rlc_buf_len))); 
-			
+	dmac_inv_range((const void *)q6venc->rlc_bufs[rlc_buf_index].vaddr,
+		       (const void *)(q6venc->rlc_bufs[rlc_buf_index].vaddr +
+				      q6venc->rlc_buf_len));
 	q6venc->rlc_buf_index = (q6venc->rlc_buf_index + 1) % RLC_MAX_BUF_NUM;
 
 	q6_param->luma_addr = buf->paddr;
