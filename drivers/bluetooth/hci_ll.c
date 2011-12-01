@@ -87,9 +87,9 @@ struct ll_struct {
 	struct sk_buff_head tx_wait_q;	/* HCILL wait queue	*/
 };
 
-#ifdef CONFIG_SERIAL_MSM_HS
-void bcm_msm_hs_request_clock_off(struct uart_port *uport);
-void bcm_msm_hs_request_clock_on(struct uart_port *uport);
+#if 0	/*#ifdef CONFIG_SERIAL_MSM_HS */
+void msm_hs_request_clock_off(struct uart_port *uport);
+void msm_hs_request_clock_on(struct uart_port *uport);
 
 static void __ll_msm_serial_clock_on(struct tty_struct *tty) {
 	struct uart_state *state = tty->driver_data;
