@@ -40,6 +40,7 @@
 #ifdef CONFIG_HAS_WAKELOCK
 #include <linux/wakelock.h>
 #endif
+#include "board-htcleo.h"
 
 enum {
 	MSM_PM_DEBUG_SUSPEND = 1U << 0,
