@@ -102,6 +102,7 @@
 #define MCI_CMDRESPENDCLR	(1 << 6)
 #define MCI_CMDSENTCLR		(1 << 7)
 #define MCI_DATAENDCLR		(1 << 8)
+#define MCI_STARTBITERRCLR	(1 << 9)
 #define MCI_DATABLOCKENDCLR	(1 << 10)
 
 
@@ -190,7 +191,7 @@ struct msmsdcc_dma_data {
 	int				busy; /* Set if DM is busy */
 	int				active;
 	unsigned int 			result;
-	struct msm_dmov_errdata 	*err;
+	struct msm_dmov_errdata		err;
 };
 
 struct msmsdcc_pio_data {
@@ -279,6 +280,12 @@ struct msmsdcc_host {
 	unsigned int	dummy_52_needed;
 	unsigned int	dummy_52_state;
 
+	struct wake_lock	sdio_suspend_wlock;
+	unsigned int    sdcc_suspending;
+	unsigned int sdcc_irq_disabled;
+	unsigned int	async_irq_during_suspending;
 };
+
+int msmsdcc_set_pwrsave(struct mmc_host *mmc, int pwrsave);
 
 #endif

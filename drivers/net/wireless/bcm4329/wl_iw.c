@@ -672,7 +672,6 @@ wl_iw_set_country(
 		if (error >= 0) {
 			p += snprintf(p, MAX_WX_STRING, "OK");
 			WL_TRACE(("%s: set country %s OK\n", __FUNCTION__, country_code));
-			dhd_bus_country_set(dev, &country_code[0]);
 			goto exit;
 		}
 	}
