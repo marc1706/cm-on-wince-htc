@@ -249,6 +249,14 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *);
 
 #if defined(CONFIG_USB_FUNCTION_MSM_HSUSB) || defined(CONFIG_USB_MSM_72K)
 void msm_hsusb_set_vbus_state(int online);
+enum usb_connect_type {
+	CONNECT_TYPE_UNKNOWN = -1,
+	CONNECT_TYPE_NONE = 0,
+	CONNECT_TYPE_USB,
+	CONNECT_TYPE_AC,
+	CONNECT_TYPE_9V_AC,
+	CONNECT_TYPE_WIRELESS,
+};
 
 /* START: add USB connected notify function */
 struct t_usb_status_notifier{
